@@ -1,6 +1,7 @@
 apply plugin: 'maven'
 apply plugin: 'signing'
 
+
 def isReleaseBuild() {
     return VERSION_NAME.contains("SNAPSHOT") == false
 }
@@ -13,7 +14,7 @@ def getReleaseRepositoryUrl() {
     if (isLocal()) {
         return hasProperty('RELEASE_REPOSITORY_LOCAL') ? RELEASE_REPOSITORY_LOCAL : "file://C:/Users/Administrator/.m2/repository"
     } else {
-        return hasProperty('RELEASE_REPOSITORY_URL') ? RELEASE_REPOSITORY_URL : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+        return hasProperty('RELEASE_REPOSITORY_URL') ? RELEASE_REPOSITORY_URL : "https://api.bintray.com/maven/zhangzhenli/maven/android-shade-plugin/"
     }
 }
 
