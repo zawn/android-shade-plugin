@@ -1,0 +1,65 @@
+/*
+ * Copyright (c) &amp;#36;today.year, House365. All rights reserved.
+ */
+
+apply plugin: 'com.android.library'
+//apply from: '../maven.gradle'
+apply plugin: 'shade'
+
+buildscript {
+    repositories {
+        maven {
+            url "http://192.168.108.60/nexus/content/groups/public/"
+        }
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.house365.build:android-csv-variants:1.0.3'
+    }
+}
+
+android {
+    compileSdkVersion 23
+    buildToolsVersion "23.0.0"
+
+    defaultConfig {
+        minSdkVersion 10
+        targetSdkVersion 23
+        versionCode java.lang.Integer.parseInt(project.publish_version_code)
+        versionName project.publish_version
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    LinkedHashMap<String, LinkedHashMap<String, String>> buildVariants = VariantsUtil.readVariantsFromFile(project)
+
+    /**
+     * 添加Flavor
+     */
+    productFlavors {
+        buildVariants.each { flavorName, keyValueMap ->
+            "$flavorName" {
+//                applicationId = keyValueMap.get("applicationId")
+//            resValue "string", "app_name2", "Some new value"
+//            buildConfigField "boolean", 'analyse_flag', channel.get("analyse_flag").toLowerCase()
+//            manifestPlaceholders = [UMENG_CHANNEL_VALUE: channel.get("name")]
+            }
+        }
+    }
+}
+//android.registerTransform(new com.house365.build.transform.MyTransform(1)) //Uses input name as output name
+//android.registerTransform(new com.example.transform.MyTransform(2)) //Uses unique input path as output name
+//android.registerTransform(new com.example.transform.MyTransform(3)) //Uses a hash to guarantee unique names
+//android.registerTransform(new com.house365.build.transform.MyTransform(0, true, false))//Prints out the inputs received
+//android.registerTransform(new com.house365.build.transform.JarMergingTransform())//Prints out the inputs received
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile 'com.android.support:appcompat-v7:23.0.0'
+    compile 'com.google.code.gson:gson:2.4'
+    shade 'com.squareup.okhttp:okhttp:2.4.0-RC1'
+}

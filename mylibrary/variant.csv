@@ -1,0 +1,5 @@
+渠道名称,程序包名,默认城市,是否强制使用默认城市,是否统计,批量上传记录数量,调试开关,是否打包,构建类型
+name,applicationId,city,city_force,analyse_flag,analyse_num,debug_flag,enable,buildType
+Developer,com.house365.taofang.dev,南京,FALSE,TRUE,10,FALSE,TRUE,debug
+Tester,com.house365.taofang.test,南京,FALSE,TRUE,10,FALSE,TRUE,alpha
+Public,com.house365.taofang,南京,FALSE,TRUE,10,FALSE,TRUE,beta;release

@@ -1,0 +1,10 @@
+<!--
+  ~ Copyright (c) &amp;#36;today.year, House365. All rights reserved.
+  -->
+
+<resources>
+    <string name="app_name">My Library</string>
+
+    <string name="hello_world">Hello world!</string>
+    <string name="action_settings">Settings</string>
+</resources>
