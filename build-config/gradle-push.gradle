@@ -1,0 +1,110 @@
+apply plugin: 'maven'
+apply plugin: 'signing'
+
+def isReleaseBuild() {
+    return VERSION_NAME.contains("SNAPSHOT") == false
+}
+
+def isLocal() {
+    return hasProperty('local') ? Boolean.parseBoolean(getProperty('local')) : true;
+}
+
+def getReleaseRepositoryUrl() {
+    if (isLocal()) {
+        return hasProperty('RELEASE_REPOSITORY_LOCAL') ? RELEASE_REPOSITORY_LOCAL : "file://C:/Users/Administrator/.m2/repository"
+    } else {
+        return hasProperty('RELEASE_REPOSITORY_URL') ? RELEASE_REPOSITORY_URL : "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+    }
+}
+
+def getSnapshotRepositoryUrl() {
+    if (isLocal()) {
+        return hasProperty('SNAPSHOT_REPOSITORY_LOCAL') ? SNAPSHOT_REPOSITORY_LOCAL : "file://${System.env.HOME}/.m2/repository"
+    } else {
+        return hasProperty('SNAPSHOT_REPOSITORY_URL') ? SNAPSHOT_REPOSITORY_URL : "https://oss.sonatype.org/content/repositories/snapshots/"
+    }
+}
+
+def getRepositoryUsername() {
+    return hasProperty('SONATYPE_USERNAME') ? SONATYPE_USERNAME : ""
+}
+
+def getRepositoryPassword() {
+    return hasProperty('SONATYPE_PASSWORD') ? SONATYPE_PASSWORD : ""
+}
+
+afterEvaluate { project ->
+    uploadArchives {
+        //noinspection GradleMisplacedStatement
+        repositories {
+            mavenDeployer {
+                beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+
+                pom.groupId = 'com.house365.build'
+                pom.artifactId = 'android-shade-plugin'
+                pom.version = VERSION_NAME
+
+                repository(url: getReleaseRepositoryUrl()) {
+                    authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
+                }
+                snapshotRepository(url: getSnapshotRepositoryUrl()) {
+                    authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
+                }
+
+                pom.project {
+                    name 'Android Shade Plugin'
+                    description 'Gradle plugin for android library shade'
+                    url 'https://github.com/zawn/android-shade-plugin'
+                    inceptionYear '2016'
+
+                    scm {
+                        url 'https://github.com/zawn/android-shade-plugin'
+                        connection 'scm:git:git@github.com:zawn/android-shade-plugin.git'
+                        developerConnection 'scm:git:git@github.com:zawn/android-shade-plugin.git'
+                    }
+
+                    developers {
+                        developer {
+                            name 'ZhangZhenli'
+                        }
+                        developer {
+                            name 'Fanlei'
+                        }
+                    }
+
+                    licenses {
+                        license {
+                            name 'Apache License version 2.0'
+                        }
+                    }
+
+                    issueManagement {
+                        system 'GitHub Issues'
+                        url 'https://github.com/zawn/android-shade-plugin/issues'
+                    }
+                }
+            }
+        }
+    }
+
+    signing {
+        required { isReleaseBuild() && gradle.taskGraph.hasTask("uploadArchives") }
+        sign configurations.archives
+    }
+
+    task javadocJar(type: Jar, dependsOn: javadoc) {
+        classifier = 'javadoc'
+        from groovydoc
+    }
+
+    task sourcesJar(type: Jar) {
+        from sourceSets.main.allSource
+        classifier = 'sources'
+    }
+
+    artifacts {
+        archives jar
+        archives javadocJar
+        archives sourcesJar
+    }
+}
