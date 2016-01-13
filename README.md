@@ -40,3 +40,4 @@
     ```
    
 3. 示例可参考https://github.com/zawn/android-shade-plugin/tree/master/mylibrary
+4. 注意在开启混淆的时候libs目录下的jar将在混淆过程中自动打包进混淆后的jar中无需此插件.
