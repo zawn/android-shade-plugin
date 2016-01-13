@@ -26,6 +26,8 @@
             classpath 'com.house365.build:android-shade-plugin:2.0.0-alpha4'
         }
     }
+    
+    apply plugin: 'shade'
     ```
 
 2. 在dependencies中配置.
