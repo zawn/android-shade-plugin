@@ -52,6 +52,9 @@ public class AndroidShadePlugin implements Plugin<Project> {
                 }
             }
         });
+        if (android == null) {
+            throw new ProjectConfigurationException("Only use shade for android library", null)
+        }
         LibraryExtension libraryExtension = (LibraryExtension) android
         if (android instanceof LibraryExtension) {
             ShadeTransform shadeTransform = new ShadeTransform(project, libraryExtension)
@@ -64,17 +67,21 @@ public class AndroidShadePlugin implements Plugin<Project> {
             void beforeResolve(ResolvableDependencies resolvableDependencies) {
                 String name = resolvableDependencies.getName()
                 if (name.startsWith("_") && name.endsWith("Compile") && !name.contains("UnitTest") && !name.contains("AndroidTest")) {
-                    String configName = name.replace("Compile", "Shade").substring(1);
-                    def configuration = project.configurations.getByName(configName)
-                    if (configuration != null) {
-                        project.configurations[name].extendsFrom(configuration)
-                    }
-                    HashSet<String> hashSet = shadeConfigurations.get(configName)
-                    for (String ext : hashSet) {
-                        configuration = project.configurations.findByName(ext)
-                        if (configuration != null) {
-                            project.configurations[name].extendsFrom(configuration)
+                    def config = project.configurations.findByName(name)
+                    if (config != null) {
+                        String shadeConfigName = name.replace("Compile", "Shade").substring(1);
+                        def shadeConfig = project.configurations.findByName(shadeConfigName)
+                        if (shadeConfig != null) {
+                            config.extendsFrom(shadeConfig)
                         }
+                        HashSet<String> hashSet = shadeConfigurations.get(shadeConfigName)
+                        if (hashSet != null)
+                            for (String ext : hashSet) {
+                                shadeConfig = project.configurations.findByName(ext)
+                                if (shadeConfig != null) {
+                                    config.extendsFrom(shadeConfig)
+                                }
+                            }
                     }
                 }
             }
