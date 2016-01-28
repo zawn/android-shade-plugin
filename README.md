@@ -6,7 +6,7 @@
 
 ## 说明
 
-该插件使用了Transform API,参见:http://tools.android.com/tech-docs/new-build-system/transform-api ,要求Android Gradle Plugin插件版本不低于2.0.0-alpha3
+该插件使用了Transform API,参见:http://tools.android.com/tech-docs/new-build-system/transform-api ,要求Android Gradle Plugin插件版本不低于1.5.0
 
 
 ## 使用
@@ -23,7 +23,7 @@
             jcenter()
         }
         dependencies {
-            classpath 'com.house365.build:android-shade-plugin:2.0.0-alpha4'
+            classpath 'com.house365.build:android-shade-plugin:1.5.0'
         }
     }
     

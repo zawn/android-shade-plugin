@@ -10,7 +10,7 @@ buildscript {
         jcenter()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:1.5.0'
+        classpath 'com.android.tools.build:gradle:2.0.0-alpha7'
         classpath 'com.netflix.nebula:gradle-info-plugin:2.2.4'
 
         // NOTE: Do not place your application dependencies here; they belong
@@ -47,4 +47,10 @@ task clean(type: Delete) {
 
 configurations.all {
     resolutionStrategy.cacheDynamicVersionsFor 10, 'minutes'
+}
+
+task printBuildScriptClasspath << {
+    println project.buildscript.configurations.classpath.each {
+        println it
+    }
 }
