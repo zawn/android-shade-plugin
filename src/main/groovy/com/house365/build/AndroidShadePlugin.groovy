@@ -86,6 +86,10 @@ public class AndroidShadePlugin implements Plugin<Project> {
                     pathTask.variantConfiguration = variantData.getVariantConfiguration()
                     Task task = project.tasks.findByName(taskName)
                     task.dependsOn pathTask
+//                    AbstractCompile javaCompile = variant.hasProperty('javaCompiler') ? variant.javaCompiler : variant.javaCompile
+//                    javaCompile.classpath.each {
+//                        println it
+//                    }
                 }
             }
         }
@@ -93,7 +97,11 @@ public class AndroidShadePlugin implements Plugin<Project> {
             @Override
             void beforeResolve(ResolvableDependencies resolvableDependencies) {
                 String name = resolvableDependencies.getName()
-                if (name.startsWith("_") && name.endsWith("Compile") && !name.contains("UnitTest") && !name.contains("AndroidTest")) {
+                if (resolvableDependencies.path.startsWith(project.path + ":")
+                        && name.startsWith("_")
+                        && name.endsWith("Compile")
+                        && !name.contains("UnitTest")
+                        && !name.contains("AndroidTest")) {
                     def config = project.configurations.findByName(name)
                     if (config != null) {
                         String shadeConfigName = name.replace("Compile", "Shade").substring(1);
