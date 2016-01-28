@@ -1,3 +1,5 @@
+import static org.gradle.api.JavaVersion.VERSION_1_6
+
 apply plugin: 'groovy'
 apply plugin: 'java'
 
@@ -9,14 +11,14 @@ repositories {
     jcenter()
 }
 
-sourceCompatibility = JavaVersion.VERSION_1_6
-targetCompatibility = JavaVersion.VERSION_1_6
+sourceCompatibility = VERSION_1_6
+targetCompatibility = VERSION_1_6
 
 dependencies {
+    compile 'com.android.tools.build:gradle:1.5.0'
+    compile 'org.apache.commons:commons-lang3:3.4'
     compile gradleApi()
     compile localGroovy()
-    compile "com.android.tools.build:gradle:2.0.0-alpha6"
-    compile 'com.android.tools.build:transform-api:2.0.0-alpha6'
 }
 
 apply from: 'build-config/gradle-push.gradle'
