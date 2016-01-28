@@ -45,6 +45,7 @@ public class ShadeTransform extends Transform {
     private boolean isLibrary = true;
     private Project project
     private variantScope
+    private static logger = org.slf4j.LoggerFactory.getLogger(ShadeTransform.class)
 
 
     public ShadeTransform(Project project, LibraryExtension LibraryExtension) {
@@ -98,12 +99,7 @@ public class ShadeTransform extends Transform {
         if (!isLibrary)
             throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
 
-        Set<File> needCombineSet = new LinkedHashSet<>()
-        for (AndroidSourceSet sourceSet : variant.getSourceSets()) {
-            Set<File> files = getShadeLibs(project.configurations, sourceSet)
-            if (files != null)
-                needCombineSet.addAll(files)
-        }
+        LinkedHashSet<File> needCombineSet = getNeedCombineFiles(project, variant.getVariantData().getVariantConfiguration())
         FileUtils.mkdirs(jarFile.getParentFile());
         deleteIfExists(jarFile);
 
@@ -135,8 +131,8 @@ public class ShadeTransform extends Transform {
         } finally {
             jarMerger.close();
         }
-        removeCombinedJar(variant.variantData.getVariantConfiguration(), needCombineSet)
     }
+
 
     LibraryVariantImpl getCurrentVariantScope(File file) {
         for (LibraryVariantImpl variant : libraryExtension.libraryVariants) {
@@ -154,14 +150,30 @@ public class ShadeTransform extends Transform {
         return child.getAbsolutePath().startsWith(possibleParent.getAbsolutePath());
     }
 
-    protected Set<File> getShadeLibs(
-            @NonNull ConfigurationContainer configurations,
-            @NonNull AndroidSourceSet sourceSet) {
-        project.getLogger().info("sourceSet Name :" + sourceSet.getName())
+    /**
+     * 获取需要合并的jar.
+     * @param project
+     * @param variant
+     * @return
+     */
+    public static LinkedHashSet<File> getNeedCombineFiles(Project project,
+                                                          VariantConfiguration variantConfiguration) {
+        Set<File> needCombineSet = new LinkedHashSet<>()
+        for (AndroidSourceSet sourceSet : variantConfiguration.getSortedSourceProviders()) {
+            Set<File> files = getShadeLibs(project.configurations, sourceSet)
+            if (files != null)
+                needCombineSet.addAll(files)
+        }
+        return needCombineSet
+    }
+
+    private static Set<File> getShadeLibs(@NonNull ConfigurationContainer configurations,
+                                          @NonNull AndroidSourceSet sourceSet) {
+        this.logger.info("sourceSet Name :" + sourceSet.getName())
         def shadeConfigurationName = AndroidShadePlugin.getShadeConfigurationName(sourceSet.getName())
         def shadeConfiguration = configurations.findByName(shadeConfigurationName);
         if (shadeConfiguration != null) {
-            project.getLogger().info("Find configuration " + shadeConfigurationName)
+            this.logger.info("Find configuration " + shadeConfigurationName)
             return shadeConfiguration.files
         }
         return null
@@ -171,8 +183,8 @@ public class ShadeTransform extends Transform {
      * 从以来中删除已经合并的jar
      *
      */
-    @NonNull
-    public void removeCombinedJar(VariantConfiguration variantConfiguration, Set<File> combinedSet) {
+    public static void removeCombinedJar(VariantConfiguration variantConfiguration,
+                                         Set<File> combinedSet) {
         Collection<JarDependency> externalJarDependencies = variantConfiguration.getExternalJarDependencies()
         HashSet<JarDependency> set = new HashSet<>();
         for (JarDependency jar : externalJarDependencies) {
@@ -180,7 +192,7 @@ public class ShadeTransform extends Transform {
             if (!combinedSet.contains(jarFile)) {
                 set.add(jar)
             } else {
-                println "Remove jar already combined :" + jarFile
+                println("Remove combine jar :" + jarFile)
             }
         }
         Field declaredField = VariantConfiguration.class.getDeclaredField("mExternalJars");

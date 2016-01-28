@@ -5,19 +5,24 @@
 package com.house365.build
 
 import com.android.annotations.NonNull
+import com.android.build.api.transform.Transform
 import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.AndroidSourceSet
+import com.android.build.gradle.internal.api.LibraryVariantImpl
+import com.android.build.gradle.internal.pipeline.TransformManager
+import com.android.build.gradle.internal.scope.VariantScope
+import com.android.build.gradle.internal.variant.LibraryVariantData
+import com.house365.build.task.ClassPathTask
 import com.house365.build.transform.ShadeTransform
-import org.gradle.api.Action
-import org.gradle.api.Plugin
-import org.gradle.api.Project
-import org.gradle.api.ProjectConfigurationException
+import org.gradle.api.*
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ConfigurationContainer
 import org.gradle.api.artifacts.DependencyResolutionListener
 import org.gradle.api.artifacts.ResolvableDependencies
 import org.gradle.api.tasks.SourceSet
+
+import java.lang.reflect.Method
 
 /**
  * Created by ZhangZhenli on 2016/1/6.
@@ -27,6 +32,9 @@ public class AndroidShadePlugin implements Plugin<Project> {
     private BaseExtension android
 
     private LinkedHashMap<String, HashSet<String>> shadeConfigurations = new LinkedHashMap()
+    private ShadeTransform shadeTransform
+
+    private static logger = org.slf4j.LoggerFactory.getLogger(ShadeTransform.class)
 
     @Override
     void apply(Project project) {
@@ -55,12 +63,31 @@ public class AndroidShadePlugin implements Plugin<Project> {
         if (android == null) {
             throw new ProjectConfigurationException("Only use shade for android library", null)
         }
-        LibraryExtension libraryExtension = (LibraryExtension) android
         if (android instanceof LibraryExtension) {
-            ShadeTransform shadeTransform = new ShadeTransform(project, libraryExtension)
-            libraryExtension.registerTransform(shadeTransform)
+            LibraryExtension libraryExtension = (LibraryExtension) android
+            shadeTransform = new ShadeTransform(project, libraryExtension)
+            libraryExtension.registerTransform(this.shadeTransform)
         } else {
             throw new ProjectConfigurationException("Unable to use shade for android application", null)
+        }
+        project.afterEvaluate {
+            if (android instanceof LibraryExtension) {
+                LibraryExtension libraryExtension = (LibraryExtension) android
+                for (LibraryVariantImpl variant : libraryExtension.libraryVariants) {
+                    LibraryVariantData variantData = variant.variantData
+                    VariantScope scope = variantData.getScope()
+                    Method getTaskNamePrefixMethod = TransformManager.class.getDeclaredMethod("getTaskNamePrefix", Transform.class)
+                    getTaskNamePrefixMethod.setAccessible(true);
+                    String prefix = getTaskNamePrefixMethod.invoke(null, shadeTransform)
+                    String taskName = scope.getTaskName(prefix);
+                    // 大写第一个字母
+                    String pinyin = String.valueOf(taskName.charAt(0)).toUpperCase().concat(taskName.substring(1));
+                    def pathTask = project.tasks.create("pre" + pinyin, ClassPathTask)
+                    pathTask.variantConfiguration = variantData.getVariantConfiguration()
+                    Task task = project.tasks.findByName(taskName)
+                    task.dependsOn pathTask
+                }
+            }
         }
         project.getGradle().addListener(new DependencyResolutionListener() {
             @Override
@@ -106,7 +133,7 @@ public class AndroidShadePlugin implements Plugin<Project> {
             @NonNull ConfigurationContainer configurations,
             @NonNull AndroidSourceSet sourceSet,
             @NonNull String configurationDescription) {
-        println "sourceSet Name :" + sourceSet.getName()
+        logger.info "sourceSet Name :" + sourceSet.getName()
         def shadeConfigurationName = getShadeConfigurationName(sourceSet.getName())
         def shadeConfiguration = configurations.findByName(shadeConfigurationName);
         if (shadeConfiguration == null) {
