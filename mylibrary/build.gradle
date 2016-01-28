@@ -37,21 +37,21 @@ android {
         }
     }
 
-    LinkedHashMap<String, LinkedHashMap<String, String>> buildVariants = VariantsUtil.readVariantsFromFile(project)
-
-    /**
-     * 添加Flavor
-     */
-    productFlavors {
-        buildVariants.each { flavorName, keyValueMap ->
-            "$flavorName" {
-//                applicationId = keyValueMap.get("applicationId")
-//            resValue "string", "app_name2", "Some new value"
-//            buildConfigField "boolean", 'analyse_flag', channel.get("analyse_flag").toLowerCase()
-//            manifestPlaceholders = [UMENG_CHANNEL_VALUE: channel.get("name")]
-            }
-        }
-    }
+//    LinkedHashMap<String, LinkedHashMap<String, String>> buildVariants = VariantsUtil.readVariantsFromFile(project)
+//
+//    /**
+//     * 添加Flavor
+//     */
+//    productFlavors {
+//        buildVariants.each { flavorName, keyValueMap ->
+//            "$flavorName" {
+////                applicationId = keyValueMap.get("applicationId")
+////            resValue "string", "app_name2", "Some new value"
+////            buildConfigField "boolean", 'analyse_flag', channel.get("analyse_flag").toLowerCase()
+////            manifestPlaceholders = [UMENG_CHANNEL_VALUE: channel.get("name")]
+//            }
+//        }
+//    }
 }
 
 dependencies {
