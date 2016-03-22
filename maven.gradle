@@ -1,17 +1,27 @@
-/*
- * Copyright (c) 2015, House365. All rights reserved.
- */
-
 /**
- * 用于向Maven仓库提交AAR文件以及JavaDoc,JavaSource
+ * 用于在构建基于Gradle的Android Application/Library时,向APK/AAR中添加构建信息,打包JavaDoc,JavaSource,
+ * ProgruardMapping,并向Maven仓库提交.
+ * 注:为提高开发效率,仅当构建过程满足isExpectBuild()方法的判定条件时,上述过程才会执行.
+ * 
  * 使用方法,在build.gradle中添加
  *      apply from: 'maven.gradle'
- *  并在gradle.properties中配置下列参数
- *  publish_group_id=com.house365.library //your group_id
- *  publish_artifact_id=testmaven //your artifact_id
- *  publish_version=1.0.0 //your version
- *  nexus_username=your_name
- *  nexus_password=your_password
+ * 并在gradle.properties中配置下列参数
+
+ #控制开关
+ publish_is_upload_remote = false                       //true:提交到远程仓库,false:提交到${project.rootDir}/repo目录下
+ publish_is_build_javadoc = true                        //是否生成JavaDoc以及打包Source
+
+ #版本相关设置
+ publish_group_id=com.myapp                             //your group_id
+ publish_artifact_id=365TaoFang                         //your artifact_id
+ publish_version=6.1.5-SNAPSHOT                         //your version
+ publish_version_code=615
+
+ #仓库相关设置
+ release_repository_url=ftp://192.168.108.42/projects/
+ snapshot_repository_url=ftp://192.168.108.42/projects/
+ nexus_username=your_username
+ nexus_password=your_password
 
  */
 apply plugin: 'maven'
@@ -163,40 +173,69 @@ def defZipProgruardMappingTask = { dependsOnTaskName, variant ->
             destinationDir = new File("$project.buildDir/libs/") // 设置和Jar默认路径一致.
             from "$project.buildDir/outputs/mapping/${variant.getDirName()}"
         }
-
-        /**
-         * Start: http://stackoverflow.com/questions/25807865/java-resource-files-are-missing-when-i-build-my-android-library-with-gradle-and
-         */
-//        File outFile;
-//        if (android.getClass().name.contains("LibraryExtension")) {
-//            outFile = project.file("${project.buildDir}/intermediates/bundles/${variant.getDirName()}/classes.jar")
-//        } else {
-//            outFile = project.file("${project.buildDir}/intermediates/classes-proguard/${variant.getDirName()}/classes.jar")
-//        }
-//
-//        task("jar${variant.name.capitalize()}WithResource", type: Jar, dependsOn: "proguard${variant.variantData.variantConfiguration.fullName.capitalize()}") {
-//            from(zipTree(outFile)) {
-//                include '**'
-//            }
-//            from fileTree("${project.buildDir}/intermediates/javaResources/${variant.dirName}/")
-//            archiveName = "new_" + outFile.getName()
-//            destinationDir = outFile.getParentFile()
-//        }
-//
-//        tasks.getByName("proguard${variant.variantData.variantConfiguration.fullName.capitalize()}").doLast {
-//            tasks.getByName("jar${variant.name.capitalize()}WithResource").execute()
-//            def parentFile = outFile.getParentFile()
-//            def destName = outFile.getName()
-//            def oldDestJar = new File(parentFile, "old_" + destName)
-//            outFile.renameTo(oldDestJar)
-//            File newDestJar = new File(parentFile, "new_" + destName)
-//            newDestJar.renameTo(outFile)
-//            oldDestJar.delete();
-//        }
-        /**
-         * End:http://stackoverflow.com/questions/25807865/java-resource-files-are-missing-when-i-build-my-android-library-with-gradle-and
-         */
     }
+}
+
+def defGenerateManifestTask = { dependsOnTaskName, variant ->
+    final configuration = variant.variantData.variantConfiguration
+    def writeManifestPropertiesTask = tasks.getByName("writeManifestProperties")
+    def processJavaRes = tasks.getByName("process${configuration.fullName.capitalize()}JavaRes")
+
+    def manifestOutputDir = project.file(new File(project.buildDir, "generated/resources/manifest"))
+    def manifestOutput = new File(manifestOutputDir, variant.dirName)
+    processJavaRes.from(manifestOutput)
+
+    def generateManifestTask = task("generate${variant.name.capitalize()}ManifestProperties") << {
+        Properties properties = new Properties() {
+            @Override
+            public synchronized Enumeration<Object> keys() {
+                return Collections.enumeration(new TreeSet<Object>(super.keySet()));
+            }
+        };
+        properties.load(new FileInputStream(writeManifestPropertiesTask.getPropertiesFile()))
+        properties.put("X-Android-PackageName", configuration.applicationId + "")
+        properties.put("X-Android-VersionName", configuration.getVersionName() + "")
+        properties.put("X-Android-VersionCode", configuration.getVersionCode() + "")
+        properties.put("X-Android-FullName", configuration.fullName)
+        properties.put("X-Android-BuildType", variant.buildType.name)
+        properties.put("X-Android-FlavorName", variant.flavorName)
+        properties.put("X-Android-MinSdkVersion", configuration.minSdkVersion.getApiString())
+        properties.put("X-Android-TargetSdkVersion", configuration.targetSdkVersion.getApiString())
+
+        File outputFile
+        if (variant.variantData.getClass().name.contains("ApplicationVariantData"))
+            outputFile = new File("${manifestOutput}/META-INF/build-info.properties")
+        else {
+            outputFile = new File("${manifestOutput}/META-INF/${configuration.applicationId}.properties")
+        }
+
+        if (outputFile.exists()) {
+            Properties oldProp = new Properties();
+            oldProp.load(new FileInputStream(outputFile))
+            oldProp.remove("Build-Date");
+            final buildDate = properties.remove("Build-Date");
+            if (!oldProp.equals(properties)) {
+                properties.put("Build-Date", buildDate)
+            }
+        } else {
+            if (!outputFile.getParentFile().exists())
+                outputFile.getParentFile().mkdirs()
+            outputFile.createNewFile()
+        }
+
+        if (properties.containsKey("Build-Date"))
+            try {
+                BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(outputFile))
+                properties.store(bufferedWriter, "\nAutomatic generated.\n\n@author ZhangZhenli\n")
+                bufferedWriter.flush()
+                bufferedWriter.close()
+            } catch (IOException e) {
+                throw e
+            }
+    }
+
+    generateManifestTask.dependsOn writeManifestPropertiesTask
+    processJavaRes.dependsOn generateManifestTask
 }
 
 /**
@@ -206,29 +245,20 @@ def defZipProgruardMappingTask = { dependsOnTaskName, variant ->
  */
 if (android.getClass().name.contains("LibraryExtension")) {
     android.libraryVariants.all { variant ->
-        String dependsOnTaskName = "assemble${variant.variantData.variantConfiguration.fullName.capitalize()}"
-        final List<String> taskNames = project.getGradle().startParameter.taskNames;
-        boolean isBuild = false
-        for (String name : taskNames) {
-            String replace = name.replace("assemble", "")
-            if (replace.equalsIgnoreCase(variant.variantData.variantConfiguration.fullName.capitalize())
-                    || replace.equalsIgnoreCase(variant.buildType.name)
-                    || replace.equalsIgnoreCase(variant.variantData.variantConfiguration.flavorName)) {
-                isBuild = true
-                break
-            }
-        }
+        final configuration = variant.variantData.variantConfiguration
+        String dependsOnTaskName = "assemble${configuration.fullName.capitalize()}"
+        boolean isBuild = isExpectBuild(configuration)
         if (!"".equals(variant.flavorName)) {
             throw new GradleException("Do not set flavors ,the current maven.gradle script does not support multiple flavors!")
         }
-        def buildTypeName = variant.buildType.name
-        if (isBuild || buildTypeName.equals("release")) {
+        if (isBuild || variant.buildType.name.equals("release")) {
             if (isBuildJavaDoc())
                 defJavaDocAndJavaSourceTasks(dependsOnTaskName, variant)
             defZipProgruardMappingTask(dependsOnTaskName, variant)
+            defGenerateManifestTask(dependsOnTaskName, variant)
             /**
              * 打包当前代码为Jar文件.
-             * 你在使用该Jar文件的时候可能会出错,应为该Jar文件不包含需要的R文件,如果确需引用请确保你在类
+             * 你在使用该Jar文件的时候可能会出错,因为该Jar文件不包含需要的R文件,如果确需引用请确保你在类
              * 中没有对R的引用,如果你的Android Library Module不包含任何资源文件或没有对其进行引用则可放
              * 心使用。
              */
@@ -264,61 +294,19 @@ if (android.getClass().name.contains("AppExtension")) {
     android.applicationVariants.all { variant ->
         final configuration = variant.variantData.variantConfiguration
         String dependsOnTaskName = "assemble${configuration.fullName.capitalize()}"
-        final List<String> taskNames = project.getGradle().startParameter.taskNames;
-        boolean isBuild = false
-        for (String name : taskNames) {
-            String replace = name.replace("assemble", "")
-            if (replace.equalsIgnoreCase(configuration.fullName.capitalize())
-                    || replace.equalsIgnoreCase(variant.buildType.name)
-                    || replace.equalsIgnoreCase(configuration.flavorName)) {
-                isBuild = true
-                break
-            }
-        }
+        boolean isBuild = isExpectBuild(configuration)
         if (isBuild) {
             if (isBuildJavaDoc())
                 defJavaDocAndJavaSourceTasks(dependsOnTaskName, variant)
             defZipProgruardMappingTask(dependsOnTaskName, variant)
-            def writeManifestPropertiesTask = tasks.getByName("writeManifestProperties")
-            def processJavaRes = tasks.getByName("process${configuration.fullName.capitalize()}JavaRes")
-            processJavaRes.doLast {
-                Properties properties = new Properties();
-                properties.put("X-Android-PackageName", configuration.applicationId + "")
-                properties.put("X-Android-VersionName", configuration.getVersionName() + "")
-                properties.put("X-Android-VersionCode", configuration.getVersionCode() + "")
-                properties.put("X-Android-FullName", configuration.fullName)
-                properties.put("X-Android-BuildType", variant.buildType.name)
-                properties.put("X-Android-FlavorName", variant.flavorName)
-                properties.put("X-Android-MinSdkVersion", configuration.minSdkVersion.getApiString())
-                properties.put("X-Android-TargetSdkVersion", configuration.targetSdkVersion.getApiString())
-
-                File inputFile = writeManifestPropertiesTask.getPropertiesFile()
-                inputFile = writeManifestPropertiesTask.getPropertiesFile()
-                File outputFile = new File("${project.buildDir}/intermediates/sourceFolderJavaResources/${configuration.dirName}/META-INF/build-info.properties")
-                GFileUtils.copyFile(inputFile, outputFile)
-                logger.info("Copy :", inputFile)
-                logger.info("to :", outputFile)
-
-                ByteArrayOutputStream outputStream = new ByteArrayOutputStream()
-                properties.store(outputStream, "\n\n\n\nAutomatic generated.\n\n@author ZhangZhenli\n")
-                logger.info(outputStream.toString())
-                try {
-                    PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(outputFile, true)));
-                    out.println()
-                    out.write(outputStream.toString());
-                    out.flush()
-                    out.close()
-                } catch (IOException e) {
-                    throw e
-                }
-                logger.info("add  :", outputStream.toString(), " to ", outputFile)
-            }
+            defGenerateManifestTask(dependsOnTaskName, variant)
 
             /**
              * 归档APK文件.
              */
             def archiveApkTaskName = "archive${variant.name.capitalize()}Apk"
-            task(archiveApkTaskName, dependsOn: [dependsOnTaskName, "writeManifestProperties"]) {
+            def writeManifestPropertiesTask = tasks.getByName("writeManifestProperties")
+            task(archiveApkTaskName, dependsOn: writeManifestPropertiesTask) {
                 group "archive"
                 description = 'APK file archiving. '
                 Map<String, ?> manifest = writeManifestPropertiesTask.getManifest()
@@ -331,14 +319,6 @@ if (android.getClass().name.contains("AppExtension")) {
                 }
             }
 
-            processJavaRes.dependsOn writeManifestPropertiesTask
-//            mergeAssetsTask.doLast {
-//                File inputFile = writeManifestPropertiesTask.getPropertiesFile()
-//                File outputFile = new File(mergeAssetsTask.getOutputDir(), "info.properties")
-//                GFileUtils.copyFile(inputFile, outputFile)
-//                logger.info("Copy :", inputFile)
-//                logger.info("to :", outputFile)
-//            }
 //            println tasks.getByName("uploadArchives")
 //            println tasks.getByName("uploadArchives").doFirst {
 //                Set<File> fileSet = configuration.getArtifacts().getFiles().getFiles();
@@ -411,6 +391,27 @@ if (android.getClass().name.contains("AppExtension")) {
             }
         }
     }
+}
+
+/**
+ * 检查当前构建过程是否需要添加额外的构建信息.
+ *
+ * @param configuration
+ * @return
+ */
+private boolean isExpectBuild(final configuration) {
+    final List<String> taskNames = project.getGradle().startParameter.taskNames;
+    boolean isExpect = false
+    for (String name : taskNames) {
+        String replace = name.replace("assemble", "")
+        if (replace.equalsIgnoreCase(configuration.fullName.capitalize())
+                || replace.equalsIgnoreCase(configuration.buildType.name)
+                || replace.equalsIgnoreCase(configuration.flavorName)) {
+            isExpect = true
+            break
+        }
+    }
+    return isExpect
 }
 
 private String removeMavenPrefix(String destClassifier, String artifactId) {
