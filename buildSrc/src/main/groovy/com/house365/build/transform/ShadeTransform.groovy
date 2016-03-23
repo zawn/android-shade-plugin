@@ -14,18 +14,23 @@ import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.AndroidSourceSet
 import com.android.build.gradle.internal.api.LibraryVariantImpl
 import com.android.build.gradle.internal.pipeline.TransformManager
+import com.android.build.gradle.internal.scope.ConventionMappingHelper
 import com.android.build.gradle.internal.scope.GlobalScope
 import com.android.build.gradle.internal.transforms.JarMerger
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.core.VariantConfiguration
 import com.android.builder.dependency.JarDependency
+import com.android.builder.dependency.LibraryDependency
 import com.android.builder.signing.SignedJarBuilder
+import com.android.ide.common.res2.AssetSet
 import com.android.utils.FileUtils
+import com.google.common.collect.Lists
 import com.google.common.collect.Sets
 import com.house365.build.AndroidShadePlugin
 import org.gradle.api.Project
 import org.gradle.api.ProjectConfigurationException
 import org.gradle.api.artifacts.ConfigurationContainer
+import org.gradle.api.internal.ConventionMapping
 
 import java.lang.reflect.Field
 
@@ -39,6 +44,7 @@ import static com.google.common.base.Preconditions.checkNotNull
  * This only packages the class files. It ignores other files.
  */
 public class ShadeTransform extends Transform {
+    private static final boolean DEBUG = true;
 
     private LibraryVariantImpl variant
     private LibraryExtension libraryExtension
@@ -98,8 +104,8 @@ public class ShadeTransform extends Transform {
         isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
         if (!isLibrary)
             throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
-
-        LinkedHashSet<File> needCombineSet = getNeedCombineFiles(project, variant.getVariantData().getVariantConfiguration())
+        println "55555555555555555555555555555555555555555"
+        LinkedHashSet<File> needCombineSet = getNeedCombineJars(project, variant.getVariantData())
         FileUtils.mkdirs(jarFile.getParentFile());
         deleteIfExists(jarFile);
 
@@ -122,6 +128,7 @@ public class ShadeTransform extends Transform {
                 }
             }
             for (File file : needCombineSet) {
+                println "combine jar: " + file
                 jarMerger.addJar(file)
             }
         } catch (FileNotFoundException e) {
@@ -151,15 +158,15 @@ public class ShadeTransform extends Transform {
     }
 
     /**
-     * 获取需要合并的jar.
+     * 获取需要合并的文件包含JAR/AAR.
      * @param project
      * @param variant
      * @return
      */
     public static LinkedHashSet<File> getNeedCombineFiles(Project project,
-                                                          VariantConfiguration variantConfiguration) {
+                                                          LibraryVariantData variantData) {
         Set<File> needCombineSet = new LinkedHashSet<>()
-        for (AndroidSourceSet sourceSet : variantConfiguration.getSortedSourceProviders()) {
+        for (AndroidSourceSet sourceSet : variantData.variantConfiguration.getSortedSourceProviders()) {
             Set<File> files = getShadeLibs(project.configurations, sourceSet)
             if (files != null)
                 needCombineSet.addAll(files)
@@ -180,12 +187,92 @@ public class ShadeTransform extends Transform {
     }
 
     /**
-     * 从以来中删除已经合并的jar
+     * 获取要合并的AAR.
+     *
+     * @param variantData
+     * @param combinedSet
+     */
+    public
+    static List<LibraryDependency> getNeedCombineAar(LibraryVariantData variantData, Set<File> combinedSet) {
+        List<LibraryDependency> combinedLibraries = new ArrayList<>()
+        List<LibraryDependency> mFlatLibraries = variantData.variantConfiguration.getAllLibraries();
+        for (int n = mFlatLibraries.size() - 1; n >= 0; n--) {
+            LibraryDependency dependency = mFlatLibraries.get(n);
+            if (combinedSet.contains(dependency.getBundle())) {
+                combinedLibraries.add(dependency)
+            }
+        }
+        return combinedLibraries
+    }
+
+    public
+    static LinkedHashSet<File> getNeedCombineJars(Project project, LibraryVariantData variantData) {
+        Set<File> needCombineJars = new LinkedHashSet<>()
+        Set<File> needCombineSet = getNeedCombineFiles(project, variantData)
+        for (File file : needCombineSet) {
+            if (file.getName().toLowerCase().endsWith(".jar")) {
+                needCombineJars.add(file)
+            }
+        }
+        List<LibraryDependency> needCombineAar = getNeedCombineAar(variantData, needCombineSet)
+        for (LibraryDependency dependency : needCombineAar) {
+            File jarFile = dependency.getJarFile();
+            if (jarFile.exists()) {
+                needCombineJars.add(jarFile)
+            }
+        }
+        return needCombineJars
+    }
+
+    /**
+     * 将AAR中的Asset合并进bundle
+     * @param variantData
+     * @param combinedSet
+     */
+    public
+    static void addAssetsToBundle(LibraryVariantData variantData, Set<File> combinedSet) {
+        List<AssetSet> assetSets = Lists.newArrayList();
+        List<LibraryDependency> needCombineAar = getNeedCombineAar(variantData, combinedSet)
+        for (LibraryDependency dependency : needCombineAar) {
+            File assetFolder = dependency.getAssetsFolder();
+            if (assetFolder.isDirectory()) {
+                AssetSet assetSet = new AssetSet(dependency.getFolder().getName());
+                assetSet.addSource(assetFolder);
+                assetSets.add(assetSet);
+            }
+        }
+
+        ConventionMapping conventionMapping =
+                (ConventionMapping) ((GroovyObject) variantData.mergeAssetsTask).getProperty("conventionMapping");
+        assetSets.addAll(conventionMapping.getConventionValue(new ArrayList<AssetSet>(), "inputDirectorySets", false));
+        ConventionMappingHelper.map(variantData.mergeAssetsTask, "inputDirectorySets") {
+            assetSets
+        }
+
+        if (DEBUG) {
+            println "Combined with all the asset"
+            assetSets.each { AssetSet assetSet ->
+                println assetSet
+            }
+            println ""
+        }
+    }
+
+    /**
+     * 从依赖中删除已经合并的jar
      *
      */
     public static void removeCombinedJar(VariantConfiguration variantConfiguration,
                                          Set<File> combinedSet) {
-        Collection<JarDependency> externalJarDependencies = variantConfiguration.getExternalJarDependencies()
+        Field declaredField
+        try {
+            //2.0.0-beta6 or later
+            declaredField = VariantConfiguration.class.getDeclaredField("mJarDependencies");
+        } catch (NoSuchFieldException e) {
+            declaredField = VariantConfiguration.class.getDeclaredField("mExternalJars");
+        }
+        declaredField.setAccessible(true)
+        Collection<JarDependency> externalJarDependencies = declaredField.get(variantConfiguration)
         HashSet<JarDependency> set = new HashSet<>();
         for (JarDependency jar : externalJarDependencies) {
             File jarFile = jar.getJarFile();
@@ -195,8 +282,6 @@ public class ShadeTransform extends Transform {
                 println("Remove combine jar :" + jarFile)
             }
         }
-        Field declaredField = VariantConfiguration.class.getDeclaredField("mExternalJars");
-        declaredField.setAccessible(true)
         declaredField.set(variantConfiguration, set)
     }
 }
