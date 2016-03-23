@@ -10,6 +10,10 @@ def isLocal() {
     return hasProperty('local') ? Boolean.parseBoolean(getProperty('local')) : true;
 }
 
+clean.doFirst {
+    delete "file://${project.getRootDir()}/repo"
+}
+
 def getReleaseRepositoryUrl() {
     if (isLocal()) {
         return hasProperty('RELEASE_REPOSITORY_LOCAL') ? RELEASE_REPOSITORY_LOCAL : "file://${project.getRootDir()}/repo"
@@ -20,7 +24,7 @@ def getReleaseRepositoryUrl() {
 
 def getSnapshotRepositoryUrl() {
     if (isLocal()) {
-        return hasProperty('SNAPSHOT_REPOSITORY_LOCAL') ? SNAPSHOT_REPOSITORY_LOCAL : "file://${System.env.HOME}/.m2/repository"
+        return hasProperty('SNAPSHOT_REPOSITORY_LOCAL') ? SNAPSHOT_REPOSITORY_LOCAL : "file://${project.getRootDir()}/repo"
     } else {
         return hasProperty('SNAPSHOT_REPOSITORY_URL') ? SNAPSHOT_REPOSITORY_URL : "https://oss.sonatype.org/content/repositories/snapshots/"
     }
