@@ -21,6 +21,7 @@ import org.gradle.api.artifacts.ConfigurationContainer
 import org.gradle.api.artifacts.DependencyResolutionListener
 import org.gradle.api.artifacts.ResolvableDependencies
 import org.gradle.api.tasks.SourceSet
+import org.gradle.api.tasks.compile.AbstractCompile
 
 import java.lang.reflect.Method
 
@@ -72,8 +73,10 @@ public class AndroidShadePlugin implements Plugin<Project> {
         }
         project.afterEvaluate {
             if (android instanceof LibraryExtension) {
+                println "AndroidShadePlugin.apply 55555555555555"
                 LibraryExtension libraryExtension = (LibraryExtension) android
                 for (LibraryVariantImpl variant : libraryExtension.libraryVariants) {
+                    println project.getName() + " " + variant.getName() + variant.getDirName() + " ***********************************"
                     LibraryVariantData variantData = variant.variantData
                     VariantScope scope = variantData.getScope()
                     Method getTaskNamePrefixMethod = TransformManager.class.getDeclaredMethod("getTaskNamePrefix", Transform.class)
@@ -83,13 +86,19 @@ public class AndroidShadePlugin implements Plugin<Project> {
                     // 大写第一个字母
                     String pinyin = String.valueOf(taskName.charAt(0)).toUpperCase().concat(taskName.substring(1));
                     def pathTask = project.tasks.create("pre" + pinyin, ClassPathTask)
-                    pathTask.variantConfiguration = variantData.getVariantConfiguration()
+                    pathTask.variantData = variantData
                     Task task = project.tasks.findByName(taskName)
                     task.dependsOn pathTask
-//                    AbstractCompile javaCompile = variant.hasProperty('javaCompiler') ? variant.javaCompiler : variant.javaCompile
-//                    javaCompile.classpath.each {
-//                        println it
-//                    }
+                    AbstractCompile javaCompile = variant.hasProperty('javaCompiler') ? variant.javaCompiler : variant.javaCompile
+                    javaCompile.classpath.each {
+                        println it
+                    }
+
+
+                    LinkedHashSet<File> files = ShadeTransform.getNeedCombineFiles(project, variantData);
+                    ShadeTransform.addAssetsToBundle(variantData, files)
+
+                    println project.getName() + " " + variant.getName() + variant.getDirName() + " *********************************** end"
                 }
             }
         }
