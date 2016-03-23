@@ -1,7 +1,6 @@
 import static org.gradle.api.JavaVersion.VERSION_1_6
 
 apply plugin: 'groovy'
-apply plugin: 'java'
 
 repositories {
     mavenLocal()
@@ -14,11 +13,26 @@ repositories {
 sourceCompatibility = VERSION_1_6
 targetCompatibility = VERSION_1_6
 
+configurations {
+    provided {
+        dependencies.all { dep ->
+            configurations.default.exclude group: dep.group, module: dep.name
+        }
+    }
+    compile.extendsFrom provided
+}
+
+sourceSets {
+    main {
+        compileClasspath += configurations.provided
+    }
+}
+
 dependencies {
-    compile 'com.android.tools.build:gradle:1.5.0'
     compile 'org.apache.commons:commons-lang3:3.4'
     compile gradleApi()
     compile localGroovy()
+    provided  'com.android.tools.build:gradle:1.5.0'
 }
 
 apply from: 'build-config/gradle-push.gradle'
