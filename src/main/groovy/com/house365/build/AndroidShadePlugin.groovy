@@ -13,6 +13,7 @@ import com.android.build.gradle.internal.api.LibraryVariantImpl
 import com.android.build.gradle.internal.pipeline.TransformManager
 import com.android.build.gradle.internal.scope.VariantScope
 import com.android.build.gradle.internal.variant.LibraryVariantData
+import com.android.builder.dependency.LibraryDependency
 import com.house365.build.task.ClassPathTask
 import com.house365.build.transform.ShadeTransform
 import org.gradle.api.*
@@ -76,7 +77,7 @@ public class AndroidShadePlugin implements Plugin<Project> {
                 println "AndroidShadePlugin.apply 55555555555555"
                 LibraryExtension libraryExtension = (LibraryExtension) android
                 for (LibraryVariantImpl variant : libraryExtension.libraryVariants) {
-                    println project.getName() + " " + variant.getName() + variant.getDirName() + " ***********************************"
+                    println project.getName() + " " + variant.getDirName() + " ***********************************"
                     LibraryVariantData variantData = variant.variantData
                     VariantScope scope = variantData.getScope()
                     Method getTaskNamePrefixMethod = TransformManager.class.getDeclaredMethod("getTaskNamePrefix", Transform.class)
@@ -95,10 +96,11 @@ public class AndroidShadePlugin implements Plugin<Project> {
                     }
 
 
-                    LinkedHashSet<File> files = ShadeTransform.getNeedCombineFiles(project, variantData);
-                    ShadeTransform.addAssetsToBundle(variantData, files)
-
-                    println project.getName() + " " + variant.getName() + variant.getDirName() + " *********************************** end"
+                    LinkedHashSet<File> linkedHashSet = ShadeTransform.getNeedCombineFiles(project, variantData);
+                    List<LibraryDependency> libraryDependencies = ShadeTransform.getNeedCombineAar(variantData, linkedHashSet)
+                    ShadeTransform.addAssetsToBundle(variantData, libraryDependencies)
+                    ShadeTransform.addResourceToBundle(variantData, libraryDependencies)
+                    println project.getName() + " " + variant.getDirName() + " *********************************** end\n\n\n"
                 }
             }
         }
