@@ -10,6 +10,7 @@ import com.android.annotations.Nullable
 import com.android.build.api.transform.*
 import com.android.build.api.transform.QualifiedContent.ContentType
 import com.android.build.api.transform.QualifiedContent.Scope
+import com.android.build.gradle.AndroidGradleOptions
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.AndroidSourceSet
 import com.android.build.gradle.internal.api.LibraryVariantImpl
@@ -23,6 +24,7 @@ import com.android.builder.dependency.JarDependency
 import com.android.builder.dependency.LibraryDependency
 import com.android.builder.signing.SignedJarBuilder
 import com.android.ide.common.res2.AssetSet
+import com.android.ide.common.res2.ResourceSet
 import com.android.utils.FileUtils
 import com.google.common.collect.Lists
 import com.google.common.collect.Sets
@@ -181,6 +183,8 @@ public class ShadeTransform extends Transform {
         def shadeConfiguration = configurations.findByName(shadeConfigurationName);
         if (shadeConfiguration != null) {
             this.logger.info("Find configuration " + shadeConfigurationName)
+            println "------------------"
+            println shadeConfiguration.allDependencies
             return shadeConfiguration.files
         }
         return null
@@ -225,15 +229,56 @@ public class ShadeTransform extends Transform {
     }
 
     /**
-     * 将AAR中的Asset合并进bundle
+     * 将Shade AAR中的Resource合并进bundle.
+     *
      * @param variantData
      * @param combinedSet
      */
     public
-    static void addAssetsToBundle(LibraryVariantData variantData, Set<File> combinedSet) {
+    static void addResourceToBundle(LibraryVariantData variantData, List<LibraryDependency> libraryDependencies) {
+        final boolean validateEnabled = AndroidGradleOptions.isResourceValidationEnabled(
+                variantData.getScope().getGlobalScope().getProject());
+        List<ResourceSet> resourceSets = Lists.newArrayList();
+        for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
+            LibraryDependency dependency = libraryDependencies.get(n);
+            println "\n\n ResFolder: " + dependency.getResFolder()
+            File resFolder = dependency.getResFolder();
+            if (resFolder.isDirectory()) {
+                ResourceSet resourceSet =
+                        new ResourceSet(dependency.getFolder().getName(), validateEnabled);
+                resourceSet.addSource(resFolder);
+                resourceSet.setFromDependency(true);
+                resourceSets.add(resourceSet);
+            }
+        }
+
+        ConventionMapping conventionMapping =
+                (ConventionMapping) ((GroovyObject) variantData.mergeResourcesTask).getProperty("conventionMapping");
+        resourceSets.addAll(conventionMapping.getConventionValue(new ArrayList<ResourceSet>(), "inputResourceSets", false));
+        ConventionMappingHelper.map(variantData.mergeResourcesTask, "inputResourceSets") {
+            resourceSets
+        }
+
+        if (DEBUG) {
+            println "Combined with all the resource"
+            resourceSets.each { ResourceSet assetSet ->
+                println assetSet
+            }
+            println ""
+        }
+    }
+
+    /**
+     * 将Shade AAR中的Asset合并进bundle.
+     *
+     * @param variantData
+     * @param combinedSet
+     */
+    public
+    static void addAssetsToBundle(LibraryVariantData variantData, List<LibraryDependency> libraryDependencies) {
         List<AssetSet> assetSets = Lists.newArrayList();
-        List<LibraryDependency> needCombineAar = getNeedCombineAar(variantData, combinedSet)
-        for (LibraryDependency dependency : needCombineAar) {
+        for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
+            LibraryDependency dependency = libraryDependencies.get(n);
             File assetFolder = dependency.getAssetsFolder();
             if (assetFolder.isDirectory()) {
                 AssetSet assetSet = new AssetSet(dependency.getFolder().getName());
