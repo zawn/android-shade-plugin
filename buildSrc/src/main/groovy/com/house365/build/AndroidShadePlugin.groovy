@@ -22,7 +22,7 @@ import com.android.builder.dependency.LibraryDependency
 import com.house365.build.task.ClassPathTask
 import com.house365.build.task.LibraryManifestMergeTask
 import com.house365.build.transform.ShadeJniLibsTransform
-import com.house365.build.transform.ShadeTransform
+import com.house365.build.transform.ShadeJarTransform
 import org.gradle.api.*
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ConfigurationContainer
@@ -41,10 +41,10 @@ public class AndroidShadePlugin implements Plugin<Project> {
     private BaseExtension android
 
     private LinkedHashMap<String, HashSet<String>> shadeConfigurations = new LinkedHashMap()
-    private ShadeTransform shadeJarTransform
+    private ShadeJarTransform shadeJarTransform
     private ShadeJniLibsTransform shadeJniLibsTransform
 
-    private static logger = org.slf4j.LoggerFactory.getLogger(ShadeTransform.class)
+    private static logger = org.slf4j.LoggerFactory.getLogger(ShadeJarTransform.class)
 
     @Override
     void apply(Project project) {
@@ -75,7 +75,7 @@ public class AndroidShadePlugin implements Plugin<Project> {
         }
         if (android instanceof LibraryExtension) {
             LibraryExtension libraryExtension = (LibraryExtension) android
-            shadeJarTransform = new ShadeTransform(project, libraryExtension)
+            shadeJarTransform = new ShadeJarTransform(project, libraryExtension)
             shadeJniLibsTransform = new ShadeJniLibsTransform(project, libraryExtension)
             libraryExtension.registerTransform(this.shadeJarTransform)
             libraryExtension.registerTransform(this.shadeJniLibsTransform)
@@ -104,10 +104,10 @@ public class AndroidShadePlugin implements Plugin<Project> {
                         println it
                     }
 
-                    LinkedHashSet<File> linkedHashSet = ShadeTransform.getNeedCombineFiles(project, variantData);
-                    List<LibraryDependency> libraryDependencies = ShadeTransform.getNeedCombineAar(variantData, linkedHashSet)
-                    ShadeTransform.addAssetsToBundle(variantData, libraryDependencies)
-                    ShadeTransform.addResourceToBundle(variantData, libraryDependencies)
+                    LinkedHashSet<File> linkedHashSet = ShadeJarTransform.getNeedCombineFiles(project, variantData);
+                    List<LibraryDependency> libraryDependencies = ShadeJarTransform.getNeedCombineAar(variantData, linkedHashSet)
+                    ShadeJarTransform.addAssetsToBundle(variantData, libraryDependencies)
+                    ShadeJarTransform.addResourceToBundle(variantData, libraryDependencies)
                     // Merge AndroidManifest.xml
                     println "Merge AndroidManifest.xml"
                     println libraryDependencies

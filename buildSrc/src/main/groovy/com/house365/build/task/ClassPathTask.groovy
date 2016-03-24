@@ -1,7 +1,7 @@
 package com.house365.build.task
 
 import com.android.build.gradle.internal.variant.LibraryVariantData
-import com.house365.build.transform.ShadeTransform
+import com.house365.build.transform.ShadeJarTransform
 import org.gradle.api.DefaultTask
 import org.gradle.api.tasks.TaskAction
 
@@ -14,7 +14,7 @@ class ClassPathTask extends DefaultTask {
 
     @TaskAction
     def taskAction() {
-        LinkedHashSet<File> files = ShadeTransform.getNeedCombineFiles(getProject(), variantData);
-        ShadeTransform.removeCombinedJar(variantData.getVariantConfiguration(), files)
+        LinkedHashSet<File> files = ShadeJarTransform.getNeedCombineFiles(getProject(), variantData);
+        ShadeJarTransform.removeCombinedJar(variantData.getVariantConfiguration(), files)
     }
 }
