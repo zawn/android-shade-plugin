@@ -46,7 +46,7 @@ import static com.google.common.base.Preconditions.checkNotNull
  * This only packages the class files. It ignores other files.
  */
 public class ShadeJarTransform extends Transform {
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
 
     private LibraryVariantImpl variant
     private LibraryExtension libraryExtension
@@ -177,13 +177,13 @@ public class ShadeJarTransform extends Transform {
 
     private static Set<File> getShadeLibs(@NonNull ConfigurationContainer configurations,
                                           @NonNull AndroidSourceSet sourceSet) {
-        this.logger.info("sourceSet Name :" + sourceSet.getName())
         def shadeConfigurationName = AndroidShadePlugin.getShadeConfigurationName(sourceSet.getName())
         def shadeConfiguration = configurations.findByName(shadeConfigurationName);
         if (shadeConfiguration != null) {
-            this.logger.info("Find configuration " + shadeConfigurationName)
-            println "------------------"
-            println shadeConfiguration.allDependencies
+            if (DEBUG) {
+                this.logger.info("Find configuration " + shadeConfigurationName)
+                println shadeConfiguration.allDependencies
+            }
             return shadeConfiguration.files
         }
         return null
@@ -240,7 +240,8 @@ public class ShadeJarTransform extends Transform {
         List<ResourceSet> resourceSets = Lists.newArrayList();
         for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
             LibraryDependency dependency = libraryDependencies.get(n);
-            println "\n\n ResFolder: " + dependency.getResFolder()
+            if (DEBUG)
+                println "\n\n ResFolder: " + dependency.getResFolder()
             File resFolder = dependency.getResFolder();
             if (resFolder.isDirectory()) {
                 ResourceSet resourceSet =
