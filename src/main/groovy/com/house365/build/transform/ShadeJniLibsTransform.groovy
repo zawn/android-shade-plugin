@@ -95,8 +95,8 @@ public class ShadeJniLibsTransform extends Transform {
         if (!isLibrary)
             throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
         List<LibraryDependency> libraryDependencies =
-                ShadeTransform.getNeedCombineAar(variant.getVariantData(),
-                        ShadeTransform.getNeedCombineFiles(project, variant.getVariantData()));
+                ShadeJarTransform.getNeedCombineAar(variant.getVariantData(),
+                        ShadeJarTransform.getNeedCombineFiles(project, variant.getVariantData()));
         for (LibraryDependency dependency : libraryDependencies) {
             copyFromFolder(dependency.getJniFolder());
         }
