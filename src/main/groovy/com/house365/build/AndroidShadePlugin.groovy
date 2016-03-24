@@ -6,15 +6,21 @@ package com.house365.build
 
 import com.android.annotations.NonNull
 import com.android.build.api.transform.Transform
+import com.android.build.gradle.AppExtension
 import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.AndroidSourceSet
+import com.android.build.gradle.api.ApplicationVariant
 import com.android.build.gradle.internal.api.LibraryVariantImpl
+import com.android.build.gradle.internal.dependency.ManifestDependencyImpl
 import com.android.build.gradle.internal.pipeline.TransformManager
+import com.android.build.gradle.internal.scope.VariantOutputScope
 import com.android.build.gradle.internal.scope.VariantScope
+import com.android.build.gradle.internal.variant.BaseVariantOutputData
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.dependency.LibraryDependency
 import com.house365.build.task.ClassPathTask
+import com.house365.build.task.LibraryManifestMergeTask
 import com.house365.build.transform.ShadeTransform
 import org.gradle.api.*
 import org.gradle.api.artifacts.Configuration
@@ -74,7 +80,6 @@ public class AndroidShadePlugin implements Plugin<Project> {
         }
         project.afterEvaluate {
             if (android instanceof LibraryExtension) {
-                println "AndroidShadePlugin.apply 55555555555555"
                 LibraryExtension libraryExtension = (LibraryExtension) android
                 for (LibraryVariantImpl variant : libraryExtension.libraryVariants) {
                     println project.getName() + " " + variant.getDirName() + " ***********************************"
@@ -100,9 +105,34 @@ public class AndroidShadePlugin implements Plugin<Project> {
                     List<LibraryDependency> libraryDependencies = ShadeTransform.getNeedCombineAar(variantData, linkedHashSet)
                     ShadeTransform.addAssetsToBundle(variantData, libraryDependencies)
                     ShadeTransform.addResourceToBundle(variantData, libraryDependencies)
+                    // Merge AndroidManifest.xml
+                    println "Merge AndroidManifest.xml"
+                    println libraryDependencies
+                    List<ManifestDependencyImpl> libraries = LibraryManifestMergeTask.getManifestDependencies(libraryDependencies)
+                    println "ManifestDependencyImpl\n" + libraries.toString()
+                    def libManifestMergeTask = project.tasks.create(scope.getTaskName("process", "ShadeManifestMerge"), LibraryManifestMergeTask)
+                    libManifestMergeTask.variantData = variantData
+                    libManifestMergeTask.libraries = libraries
+                    BaseVariantOutputData variantOutputData = scope.getVariantData().getOutputs().get(0);
+                    def proecssorTask = project.tasks.findByName(variantOutputData.manifestProcessorTask.getName());
+//                    proecssorTask.deleteAllActions()
+                    proecssorTask.finalizedBy libManifestMergeTask
                     println project.getName() + " " + variant.getDirName() + " *********************************** end\n\n\n"
                 }
+            } else {
+                println project.getName() + " " + variant.getDirName() + " ***********************************"
+                AppExtension appExtension = (AppExtension) android
+                for (ApplicationVariant variant : appExtension.applicationVariants) {
+                    // Merge AndroidManifest.xml
+                    println "Merge AndroidManifest.xml"
+                    for (final BaseVariantOutputData vod : variantData.getOutputs()) {
+                        VariantOutputScope variantOutputScope = vod.getScope();
+                        println variantOutputScope.getManifestProcessorTask().getName()
+                    }
+                }
+                println project.getName() + " " + variant.getDirName() + " *********************************** end\n\n\n"
             }
+
         }
         project.getGradle().addListener(new DependencyResolutionListener() {
             @Override
