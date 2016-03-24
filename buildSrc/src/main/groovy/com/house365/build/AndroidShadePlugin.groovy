@@ -21,6 +21,7 @@ import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.dependency.LibraryDependency
 import com.house365.build.task.ClassPathTask
 import com.house365.build.task.LibraryManifestMergeTask
+import com.house365.build.transform.ShadeJniLibsTransform
 import com.house365.build.transform.ShadeTransform
 import org.gradle.api.*
 import org.gradle.api.artifacts.Configuration
@@ -40,7 +41,8 @@ public class AndroidShadePlugin implements Plugin<Project> {
     private BaseExtension android
 
     private LinkedHashMap<String, HashSet<String>> shadeConfigurations = new LinkedHashMap()
-    private ShadeTransform shadeTransform
+    private ShadeTransform shadeJarTransform
+    private ShadeJniLibsTransform shadeJniLibsTransform
 
     private static logger = org.slf4j.LoggerFactory.getLogger(ShadeTransform.class)
 
@@ -73,8 +75,10 @@ public class AndroidShadePlugin implements Plugin<Project> {
         }
         if (android instanceof LibraryExtension) {
             LibraryExtension libraryExtension = (LibraryExtension) android
-            shadeTransform = new ShadeTransform(project, libraryExtension)
-            libraryExtension.registerTransform(this.shadeTransform)
+            shadeJarTransform = new ShadeTransform(project, libraryExtension)
+            shadeJniLibsTransform = new ShadeJniLibsTransform(project, libraryExtension)
+            libraryExtension.registerTransform(this.shadeJarTransform)
+            libraryExtension.registerTransform(this.shadeJniLibsTransform)
         } else {
             throw new ProjectConfigurationException("Unable to use shade for android application", null)
         }
@@ -87,7 +91,7 @@ public class AndroidShadePlugin implements Plugin<Project> {
                     VariantScope scope = variantData.getScope()
                     Method getTaskNamePrefixMethod = TransformManager.class.getDeclaredMethod("getTaskNamePrefix", Transform.class)
                     getTaskNamePrefixMethod.setAccessible(true);
-                    String prefix = getTaskNamePrefixMethod.invoke(null, shadeTransform)
+                    String prefix = getTaskNamePrefixMethod.invoke(null, shadeJarTransform)
                     String taskName = scope.getTaskName(prefix);
                     // 大写第一个字母
                     String pinyin = String.valueOf(taskName.charAt(0)).toUpperCase().concat(taskName.substring(1));
@@ -99,7 +103,6 @@ public class AndroidShadePlugin implements Plugin<Project> {
                     javaCompile.classpath.each {
                         println it
                     }
-
 
                     LinkedHashSet<File> linkedHashSet = ShadeTransform.getNeedCombineFiles(project, variantData);
                     List<LibraryDependency> libraryDependencies = ShadeTransform.getNeedCombineAar(variantData, linkedHashSet)

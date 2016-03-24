@@ -106,7 +106,6 @@ public class ShadeTransform extends Transform {
         isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
         if (!isLibrary)
             throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
-        println "55555555555555555555555555555555555555555"
         LinkedHashSet<File> needCombineSet = getNeedCombineJars(project, variant.getVariantData())
         FileUtils.mkdirs(jarFile.getParentFile());
         deleteIfExists(jarFile);
