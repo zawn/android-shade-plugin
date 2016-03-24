@@ -51,7 +51,6 @@ public class LibraryManifestMergeTask extends DefaultTask {
 
     @TaskAction
     public void mergeLibraryManifest() {
-        System.out.println("LibraryManifestMergeTask.mergeLibraryManifest");
         VariantScope scope = variantData.getScope();
         BaseVariantOutputData variantOutputData = scope.getVariantData().getOutputs().get(0);
         processManifest = (ProcessManifest) variantOutputData.manifestProcessorTask;
@@ -121,16 +120,9 @@ public class LibraryManifestMergeTask extends DefaultTask {
                 ImmutableList.Builder<Pair<String, File>> libraryFilesBuilder = (ImmutableList.Builder<Pair<String, File>>) FieldUtils.readField(manifestMergerInvoker, "mLibraryFilesBuilder", true);
                 ImmutableList<Pair<String, File>> elements = collectLibraries(this.libraries);
                 libraryFilesBuilder.addAll(elements);
-                System.out.println("libraries:\n" + this.libraries.toString());
-                for (Pair<String, File> pair : elements) {
-                    System.out.println(pair.toString());
-                }
-
-                System.out.println(libraryFilesBuilder.build());
             } catch (IllegalAccessException e) {
                 e.printStackTrace();
             }
-            System.out.println("-------------------------------------456321");
             manifestMergerInvoker.withFeatures(optionalFeatures.toArray(
                     new ManifestMerger2.Invoker.Feature[optionalFeatures.size()]))
                     .setMergeReportFile(reportFile);

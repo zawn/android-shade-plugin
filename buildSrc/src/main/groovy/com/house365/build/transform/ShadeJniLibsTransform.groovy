@@ -101,19 +101,13 @@ public class ShadeJniLibsTransform extends Transform {
             copyFromFolder(dependency.getJniFolder());
         }
         for (TransformInput input : inputs) {
-            println "1111111111111111111111111111"
             for (JarInput jarInput : input.getJarInputs()) {
                 copyFromJar(jarInput.getFile());
             }
 
             for (DirectoryInput directoryInput : input.getDirectoryInputs()) {
-                println "1111111111111111111111111111getDirectoryInputs"
-                println directoryInput.getFile()
                 copyFromFolder(directoryInput.getFile());
             }
-        }
-        for (TransformInput input : referencedStreams) {
-            println "11111111111111111111111111112"
         }
     }
 
@@ -191,14 +185,10 @@ public class ShadeJniLibsTransform extends Transform {
                 if (child.isDirectory()) {
                     copyFromFolder(child, pathSegments);
                 } else if (child.isFile()) {
-                    println child.toString() + "\n" + pathSegments.toString()
                     if (pathSegments.size() == 3)
                         pathSegments = pathSegments.subList(1, 3)
-
                     String join = Joiner.on('/').join(pathSegments)
-                    println join
                     if (pattern.matcher(join).matches()) {
-                        println "                 matches"
                         // copy the file. However we do want to skip the first segment ('lib') here
                         // since the 'jni' folder is representing the same concept.
                         File to = FileUtils.join(jniLibsFolder, pathSegments);
