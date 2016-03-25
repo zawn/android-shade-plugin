@@ -202,7 +202,6 @@ public class ShadeJarTransform extends Transform {
         List<LibraryDependency> mFlatLibraries = variantData.variantConfiguration.getAllLibraries();
         for (int n = mFlatLibraries.size() - 1; n >= 0; n--) {
             LibraryDependency dependency = mFlatLibraries.get(n);
-            println dependency.getBundle()
             if (combinedSet.contains(dependency.getBundle())) {
                 if (dependency instanceof LibraryDependencyImpl2) {
                     combinedLibraries.add(dependency.getOriginal())
