@@ -82,7 +82,7 @@ public class ShadeJarTransform extends Transform {
     @Override
     public Set<Scope> getScopes() {
         if (isLibrary) {
-            return Sets.immutableEnumSet(Scope.PROJECT, Scope.PROJECT_LOCAL_DEPS);
+            return Sets.immutableEnumSet(Scope.PROJECT);
         }
         return TransformManager.SCOPE_FULL_PROJECT;
     }
