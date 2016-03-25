@@ -14,6 +14,7 @@ import com.android.build.gradle.AndroidGradleOptions
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.AndroidSourceSet
 import com.android.build.gradle.internal.api.LibraryVariantImpl
+import com.android.build.gradle.internal.dependency.LibraryDependencyImpl
 import com.android.build.gradle.internal.pipeline.TransformManager
 import com.android.build.gradle.internal.scope.ConventionMappingHelper
 import com.android.build.gradle.internal.scope.GlobalScope
@@ -201,8 +202,14 @@ public class ShadeJarTransform extends Transform {
         List<LibraryDependency> mFlatLibraries = variantData.variantConfiguration.getAllLibraries();
         for (int n = mFlatLibraries.size() - 1; n >= 0; n--) {
             LibraryDependency dependency = mFlatLibraries.get(n);
+            println dependency.getBundle()
             if (combinedSet.contains(dependency.getBundle())) {
-                combinedLibraries.add(dependency)
+                if (dependency instanceof LibraryDependencyImpl2) {
+                    combinedLibraries.add(dependency.getOriginal())
+                } else {
+                    combinedLibraries.add(dependency)
+                }
+
             }
         }
         return combinedLibraries
@@ -220,9 +227,16 @@ public class ShadeJarTransform extends Transform {
         List<LibraryDependency> needCombineAar = getNeedCombineAar(variantData, needCombineSet)
         for (LibraryDependency dependency : needCombineAar) {
             File jarFile = dependency.getJarFile();
-            if (jarFile.exists()) {
+            if (jarFile != null && jarFile.exists()) {
                 needCombineJars.add(jarFile)
             }
+            Collection<File> localJars = dependency.getLocalJars();
+            if (localJars != null)
+                for (File file1 : localJars) {
+                    if (jarFile.exists()) {
+                        needCombineJars.add(jarFile)
+                    }
+                }
         }
         return needCombineJars
     }
@@ -328,6 +342,60 @@ public class ShadeJarTransform extends Transform {
             }
         }
         declaredField.set(variantConfiguration, set)
+        List<LibraryDependency> mFlatLibraries = variantConfiguration.getAllLibraries()
+        for (int i = 0; i < mFlatLibraries.size(); i++) {
+            LibraryDependency dependency = mFlatLibraries.get(i)
+            if (combinedSet.contains(dependency.getJarFile())) {
+                mFlatLibraries.remove(dependency)
+                def dependencyImpl2 = new LibraryDependencyImpl2(dependency)
+                mFlatLibraries.add(i, dependencyImpl2)
+                println("Remove combine jar :" + dependency.getJarFile())
+            }
+        }
+    }
+
+    public static class LibraryDependencyImpl2 extends LibraryDependencyImpl {
+
+        private LibraryDependencyImpl dependency
+
+        LibraryDependencyImpl2(LibraryDependencyImpl dependencyImpl) {
+            super(
+                    dependencyImpl.getBundle(),
+                    dependencyImpl.getFolder(),
+                    dependencyImpl.dependencies,
+                    dependencyImpl.name,
+                    dependencyImpl.variantName,
+                    dependencyImpl.getProject(),
+                    dependencyImpl.requestedCoordinates,
+                    dependencyImpl.resolvedCoordinates,
+                    dependencyImpl.isOptional
+            )
+            this.dependency = dependencyImpl
+        }
+
+        LibraryDependencyImpl getOriginal() {
+            return dependency;
+        }
+
+        @Override
+        File getJarFile() {
+            return new File(this.getJarsRootFolder(), "none");
+        }
+
+        @Override
+        List<File> getLocalJars() {
+            return Lists.newArrayList();
+        }
+
+        @Override
+        boolean isOptional() {
+            return true
+        }
+
+        @Override
+        public String toString() {
+            return super.toString()
+        }
     }
 }
 
