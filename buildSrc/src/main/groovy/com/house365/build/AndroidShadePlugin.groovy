@@ -20,6 +20,7 @@ import com.house365.build.task.ClassPathTask
 import com.house365.build.task.LibraryManifestMergeTask
 import com.house365.build.transform.ShadeJarTransform
 import com.house365.build.transform.ShadeJniLibsTransform
+import org.apache.commons.lang3.reflect.FieldUtils
 import org.gradle.api.*
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ConfigurationContainer
@@ -27,6 +28,7 @@ import org.gradle.api.artifacts.DependencyResolutionListener
 import org.gradle.api.artifacts.ResolvableDependencies
 import org.gradle.api.tasks.SourceSet
 
+import java.lang.reflect.Field
 import java.lang.reflect.Method
 
 /**
@@ -102,6 +104,11 @@ public class AndroidShadePlugin implements Plugin<Project> {
 
                     LinkedHashSet<File> linkedHashSet = ShadeJarTransform.getNeedCombineFiles(project, variantData);
                     List<LibraryDependency> libraryDependencies = ShadeJarTransform.getNeedCombineAar(variantData, linkedHashSet)
+                    for (LibraryDependency dependency : libraryDependencies) {
+                        Field field = FieldUtils.getField(dependency.getClass(), "isOptional", true)
+                        field.set(dependency, false)
+                    }
+
                     ShadeJarTransform.addAssetsToBundle(variantData, libraryDependencies)
                     ShadeJarTransform.addResourceToBundle(variantData, libraryDependencies)
                     // Merge AndroidManifest.xml
