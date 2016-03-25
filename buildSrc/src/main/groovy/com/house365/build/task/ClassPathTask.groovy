@@ -14,7 +14,7 @@ class ClassPathTask extends DefaultTask {
 
     @TaskAction
     def taskAction() {
-        LinkedHashSet<File> files = ShadeJarTransform.getNeedCombineFiles(getProject(), variantData);
+        LinkedHashSet<File> files = ShadeJarTransform.getNeedCombineJars(getProject(), variantData);
         ShadeJarTransform.removeCombinedJar(variantData.getVariantConfiguration(), files)
     }
 }
