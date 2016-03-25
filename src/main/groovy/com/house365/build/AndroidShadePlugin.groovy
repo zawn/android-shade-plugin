@@ -84,7 +84,6 @@ public class AndroidShadePlugin implements Plugin<Project> {
             if (android instanceof LibraryExtension) {
                 LibraryExtension libraryExtension = (LibraryExtension) android
                 for (LibraryVariantImpl variant : libraryExtension.libraryVariants) {
-                    println project.getName() + " " + variant.getDirName() + " ***********************************"
                     LibraryVariantData variantData = variant.variantData
                     VariantScope scope = variantData.getScope()
                     Method getTaskNamePrefixMethod = TransformManager.class.getDeclaredMethod("getTaskNamePrefix", Transform.class)
@@ -101,7 +100,6 @@ public class AndroidShadePlugin implements Plugin<Project> {
 //                    javaCompile.classpath.each {
 //                        println it
 //                    }
-
                     LinkedHashSet<File> linkedHashSet = ShadeJarTransform.getNeedCombineFiles(project, variantData);
                     List<LibraryDependency> libraryDependencies = ShadeJarTransform.getNeedCombineAar(variantData, linkedHashSet)
                     for (LibraryDependency dependency : libraryDependencies) {
@@ -113,14 +111,13 @@ public class AndroidShadePlugin implements Plugin<Project> {
                     ShadeJarTransform.addResourceToBundle(variantData, libraryDependencies)
                     // Merge AndroidManifest.xml
                     List<ManifestDependencyImpl> libraries = LibraryManifestMergeTask.getManifestDependencies(libraryDependencies)
-                    def libManifestMergeTask = project.tasks.create(scope.getTaskName("process", "ShadeManifestMerge"), LibraryManifestMergeTask)
+                    def libManifestMergeTask = project.tasks.create(scope.getTaskName("process", "ShadeManifest"), LibraryManifestMergeTask)
                     libManifestMergeTask.variantData = variantData
                     libManifestMergeTask.libraries = libraries
                     BaseVariantOutputData variantOutputData = scope.getVariantData().getOutputs().get(0);
                     def proecssorTask = project.tasks.findByName(variantOutputData.manifestProcessorTask.getName());
 //                    proecssorTask.deleteAllActions()
                     proecssorTask.finalizedBy libManifestMergeTask
-                    println project.getName() + " " + variant.getDirName() + " *********************************** end\n\n\n"
                 }
             }
 
