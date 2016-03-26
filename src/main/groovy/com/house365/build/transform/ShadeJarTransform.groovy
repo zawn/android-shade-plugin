@@ -47,7 +47,7 @@ import static com.google.common.base.Preconditions.checkNotNull
  * This only packages the class files. It ignores other files.
  */
 public class ShadeJarTransform extends Transform {
-    private static final boolean DEBUG = false;
+    public static final boolean DEBUG = true;
 
     private LibraryVariantImpl variant
     private LibraryExtension libraryExtension
@@ -103,11 +103,13 @@ public class ShadeJarTransform extends Transform {
         File jarFile = outputProvider.getContentLocation("combined", getOutputTypes(), getScopes(),
                 Format.JAR);
         this.variant = getCurrentVariantScope(jarFile)
-        variantScope = variant.variantData.getScope()
+        def variantData = variant.getVariantData()
+        variantScope = variantData.getScope()
         isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
         if (!isLibrary)
             throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
-        LinkedHashSet<File> needCombineSet = getNeedCombineJars(project, variant.getVariantData())
+
+        LinkedHashSet<File> needCombineSet = getNeedCombineJars(project, variantData)
         FileUtils.mkdirs(jarFile.getParentFile());
         deleteIfExists(jarFile);
 
@@ -140,6 +142,9 @@ public class ShadeJarTransform extends Transform {
         } finally {
             jarMerger.close();
         }
+
+        LinkedHashSet<File> files = ShadeJarTransform.getNeedCombineJars(project, variantData);
+        ShadeJarTransform.removeCombinedJar(variantData.getVariantConfiguration(), files)
     }
 
 
@@ -182,8 +187,8 @@ public class ShadeJarTransform extends Transform {
         def shadeConfiguration = configurations.findByName(shadeConfigurationName);
         if (shadeConfiguration != null) {
             if (DEBUG) {
-                this.logger.info("Find configuration " + shadeConfigurationName)
-                println shadeConfiguration.allDependencies
+                println("Find configuration " + shadeConfigurationName)
+                println shadeConfiguration.dependencies
             }
             return shadeConfiguration.files
         }
@@ -337,7 +342,8 @@ public class ShadeJarTransform extends Transform {
             if (!combinedSet.contains(jarFile)) {
                 set.add(jar)
             } else {
-                println("Remove combine jar :" + jarFile)
+                if (DEBUG)
+                    println("Remove combine jar :" + jarFile)
             }
         }
         declaredField.set(variantConfiguration, set)
@@ -348,7 +354,8 @@ public class ShadeJarTransform extends Transform {
                 mFlatLibraries.remove(dependency)
                 def dependencyImpl2 = new LibraryDependencyImpl2(dependency)
                 mFlatLibraries.add(i, dependencyImpl2)
-                println("Remove combine jar :" + dependency.getJarFile())
+                if (DEBUG)
+                    println("Remove combine jar :" + dependency.getJarFile())
             }
         }
     }
