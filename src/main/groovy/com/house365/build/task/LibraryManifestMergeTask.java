@@ -41,13 +41,90 @@ import java.util.Map;
 public class LibraryManifestMergeTask extends DefaultTask {
 
     public LibraryVariantData variantData;
-
+    public List<ManifestDependencyImpl> libraries;
     private ILogger mLogger;
     private VariantConfiguration<CoreBuildType, CoreProductFlavor, CoreProductFlavor>
             variantConfiguration;
     private ProcessManifest processManifest;
     private AndroidBuilder builder;
-    public List<ManifestDependencyImpl> libraries;
+
+    /**
+     * Saves the {@link com.android.manifmerger.XmlDocument} to a file in UTF-8 encoding.
+     *
+     * @param xmlDocument xml document to save.
+     * @param out         file to save to.
+     */
+    private static void save(String xmlDocument, File out) {
+        try {
+            Files.createParentDirs(out);
+            Files.write(xmlDocument, out, Charsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Collect the list of libraries' manifest files.
+     *
+     * @param libraries declared dependencies
+     * @return a list of files and names for the libraries' manifest files.
+     */
+    private static ImmutableList<Pair<String, File>> collectLibraries(
+            List<? extends ManifestDependency> libraries) {
+        Object collectLibraries = null;
+        try {
+            collectLibraries = MethodInvokeUtils.invokeStaticMethod(AndroidBuilder.class, "collectLibraries", libraries);
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+        }
+        return (ImmutableList<Pair<String, File>>) collectLibraries;
+    }
+
+    /**
+     * Sets the {@link com.android.manifmerger.ManifestMerger2.SystemProperty} that can be injected
+     * in the manifest file.
+     */
+    private static void setInjectableValues(
+            ManifestMerger2.Invoker<?> invoker,
+            String packageOverride,
+            int versionCode,
+            String versionName,
+            @Nullable String minSdkVersion,
+            @Nullable String targetSdkVersion,
+            @Nullable Integer maxSdkVersion) {
+        try {
+            MethodInvokeUtils.invokeStaticMethod(AndroidBuilder.class,
+                    "setInjectableValues",
+                    invoker, packageOverride, versionCode, versionName,
+                    minSdkVersion, targetSdkVersion, maxSdkVersion);
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @NonNull
+    public static List<ManifestDependencyImpl> getManifestDependencies(
+            List<LibraryDependency> libraries) {
+
+        List<ManifestDependencyImpl> list = Lists.newArrayListWithCapacity(libraries.size());
+
+        for (LibraryDependency lib : libraries) {
+            // get the dependencies
+            List<ManifestDependencyImpl> children =
+                    getManifestDependencies(lib.getDependencies());
+            list.add(new ManifestDependencyImpl(lib.getName(), lib.getManifest(), children));
+        }
+
+        return list;
+    }
 
     @TaskAction
     public void mergeLibraryManifest() {
@@ -183,68 +260,6 @@ public class LibraryManifestMergeTask extends DefaultTask {
         }
     }
 
-    /**
-     * Saves the {@link com.android.manifmerger.XmlDocument} to a file in UTF-8 encoding.
-     *
-     * @param xmlDocument xml document to save.
-     * @param out         file to save to.
-     */
-    private static void save(String xmlDocument, File out) {
-        try {
-            Files.createParentDirs(out);
-            Files.write(xmlDocument, out, Charsets.UTF_8);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    /**
-     * Collect the list of libraries' manifest files.
-     *
-     * @param libraries declared dependencies
-     * @return a list of files and names for the libraries' manifest files.
-     */
-    private static ImmutableList<Pair<String, File>> collectLibraries(
-            List<? extends ManifestDependency> libraries) {
-        Object collectLibraries = null;
-        try {
-            collectLibraries = MethodInvokeUtils.invokeStaticMethod(AndroidBuilder.class, "collectLibraries", libraries);
-        } catch (NoSuchMethodException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
-            e.printStackTrace();
-        }
-        return (ImmutableList<Pair<String, File>>) collectLibraries;
-    }
-
-    /**
-     * Sets the {@link com.android.manifmerger.ManifestMerger2.SystemProperty} that can be injected
-     * in the manifest file.
-     */
-    private static void setInjectableValues(
-            ManifestMerger2.Invoker<?> invoker,
-            String packageOverride,
-            int versionCode,
-            String versionName,
-            @Nullable String minSdkVersion,
-            @Nullable String targetSdkVersion,
-            @Nullable Integer maxSdkVersion) {
-        try {
-            MethodInvokeUtils.invokeStaticMethod(AndroidBuilder.class,
-                    "setInjectableValues",
-                    invoker, packageOverride, versionCode, versionName,
-                    minSdkVersion, targetSdkVersion, maxSdkVersion);
-        } catch (NoSuchMethodException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
-            e.printStackTrace();
-        }
-    }
-
     public List<ManifestDependencyImpl> getLibraries() {
         return libraries;
     }
@@ -253,27 +268,11 @@ public class LibraryManifestMergeTask extends DefaultTask {
         this.libraries = libraries;
     }
 
-    public void setVariantData(LibraryVariantData variantData) {
-        this.variantData = variantData;
-    }
-
     public LibraryVariantData getVariantData() {
         return variantData;
     }
 
-    @NonNull
-    public static List<ManifestDependencyImpl> getManifestDependencies(
-            List<LibraryDependency> libraries) {
-
-        List<ManifestDependencyImpl> list = Lists.newArrayListWithCapacity(libraries.size());
-
-        for (LibraryDependency lib : libraries) {
-            // get the dependencies
-            List<ManifestDependencyImpl> children =
-                    getManifestDependencies(lib.getDependencies());
-            list.add(new ManifestDependencyImpl(lib.getName(), lib.getManifest(), children));
-        }
-
-        return list;
+    public void setVariantData(LibraryVariantData variantData) {
+        this.variantData = variantData;
     }
 }
