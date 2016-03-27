@@ -31,6 +31,8 @@ import org.gradle.api.tasks.compile.AbstractCompile
 
 import java.lang.reflect.Field
 
+import static com.house365.build.transform.ShadeJarTransform.DEBUG
+
 /**
  * Created by ZhangZhenli on 2016/1/6.
  */
@@ -86,7 +88,7 @@ public class AndroidShadePlugin implements Plugin<Project> {
                 for (LibraryVariantImpl variant : libraryExtension.libraryVariants) {
                     LibraryVariantData variantData = variant.variantData
                     VariantScope scope = variantData.getScope()
-                    if (ShadeJarTransform.DEBUG) {
+                    if (DEBUG) {
                         println variant.getName() + " javaCompile.classpath:"
                         AbstractCompile javaCompile = variant.hasProperty('javaCompiler') ? variant.javaCompiler : variant.javaCompile
                         javaCompile.classpath.each {
@@ -168,7 +170,10 @@ public class AndroidShadePlugin implements Plugin<Project> {
             @NonNull ConfigurationContainer configurations,
             @NonNull AndroidSourceSet sourceSet,
             @NonNull String configurationDescription) {
-        logger.info "sourceSet Name :" + sourceSet.getName()
+        if (DEBUG)
+            logger.info "sourceSet Name :" + sourceSet.getName()
+        if (sourceSet.getName().toLowerCase().contains("test"))
+            return null
         def shadeConfigurationName = getShadeConfigurationName(sourceSet.getName())
         def shadeConfiguration = configurations.findByName(shadeConfigurationName);
         if (shadeConfiguration == null) {
