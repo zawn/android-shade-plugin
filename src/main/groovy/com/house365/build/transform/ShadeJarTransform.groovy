@@ -34,7 +34,10 @@ import com.google.common.collect.Sets
 import com.house365.build.AndroidShadePlugin
 import org.gradle.api.Project
 import org.gradle.api.ProjectConfigurationException
+import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ConfigurationContainer
+import org.gradle.api.artifacts.Dependency
+import org.gradle.api.artifacts.DependencySet
 import org.gradle.api.internal.ConventionMapping
 
 import java.lang.reflect.Field
@@ -206,23 +209,51 @@ public class ShadeJarTransform extends Transform {
                                                           LibraryVariantData variantData) {
         Set<File> needCombineSet = new LinkedHashSet<>()
         for (AndroidSourceSet sourceSet : variantData.variantConfiguration.getSortedSourceProviders()) {
-            Set<File> files = getShadeLibs(project.configurations, sourceSet)
+            Set<File> files = getShadeLibs(project.configurations, sourceSet, variantData.getVariantDependency().compileConfiguration)
             if (files != null)
                 needCombineSet.addAll(files)
         }
         return needCombineSet
     }
 
+    /**
+     * 获取Shade依赖使用的文件路径.
+     *
+     * @param configurations
+     * @param sourceSet
+     * @return
+     */
     private static Set<File> getShadeLibs(@NonNull ConfigurationContainer configurations,
-                                          @NonNull AndroidSourceSet sourceSet) {
+                                          @NonNull AndroidSourceSet sourceSet, Configuration compileConfiguration) {
         def shadeConfigurationName = AndroidShadePlugin.getShadeConfigurationName(sourceSet.getName())
         def shadeConfiguration = configurations.findByName(shadeConfigurationName);
+        Set<File> files = new HashSet<>();
         if (shadeConfiguration != null) {
             if (DEBUG) {
                 println("Find configuration " + shadeConfigurationName)
-                println shadeConfiguration.dependencies
+                DependencySet dependencies = shadeConfiguration.dependencies
+                dependencies.each { Dependency dependency ->
+                    println dependency
+                    println dependency.getGroup() + " " + dependency.getName() + " " + dependency.getVersion()
+                }
+                println "ShadeConfiguration Files: "
+                shadeConfiguration.files.each {
+                    println it
+                }
+                println ""
             }
-            return shadeConfiguration.files
+            shadeConfiguration.allDependencies.each { dependency ->
+                def destDep = compileConfiguration.allDependencies.find { dep -> dep.name == dependency.name && dep.group == dependency.group }
+                files.addAll(compileConfiguration.files(destDep))
+            }
+            if (DEBUG) {
+                println "CompileConfiguration Files: "
+                files.each {
+                    println it
+                }
+                println ""
+            }
+            return files
         }
         return null
     }

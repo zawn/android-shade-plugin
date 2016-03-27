@@ -28,38 +28,64 @@ class ShadeTask extends DefaultTask {
     @TaskAction
     def taskAction() {
         println "ShadeTask.taskAction"
-//        project.configurations.shade.copyRecursive { dep -> dep.name == 'okhttp' }
-//                .each { file -> println file.name }
-//        println()
-//        project.configurations.shade.files { dep -> dep.name == 'okhttp' }
-//                .each { file -> println file.name }
-//        println()
-//        println()
-//        project.configurations.compile.copyRecursive { dep ->
-//            println dep.name
-//        }.each {
-//            file -> println file.name
-//        }
-//        project.configurations.compile.files.each { file -> println file.name }
 
-        println "1234567890"
-        project.configurations.shade.copyRecursive {
-            println it.getClass()
+        def shade = project.configurations.shade
+        shade.copyRecursive { dep -> dep.name == 'okhttp' }
+                .each { file -> println file.name }
+        println("\n 1 ")
+        shade.files { dep -> dep.name == 'okhttp' }
+                .each { file -> println file.name }
+        println("\n 2 ")
+        println("\n _releaseCompile ")
+
+        def releaseCompile = project.configurations._releaseCompile
+        releaseCompile.copyRecursive { dep ->
+            println "555555555"
+            println dep
+        }
+
+        println "\nshade:"
+        shade.allDependencies.each { dependency ->
+            println dependency
+            println shade.files(dependency)
+            println "\nFrom ReleaseCompile"
+
+            def find = releaseCompile.allDependencies.find { dep -> dep.name == dependency.name && dep.group == dependency.group }
+            println find
+            println releaseCompile.files(find)
+            println "\n\n"
+
         }
         println "1234567890"
 
 
-        def configuration = project.configurations.provided
 
-        ResolvedComponentResult result = configuration.getIncoming().getResolutionResult().getRoot();
+        shade.allDependencies.each {
+            println " it   \n" + it.toString()
+            releaseCompile.files(it)
+        }
+        println "\n\n555666"
+//        println "\n\nshade ResolutionResult().allDependencies"
+//        shade.getIncoming().getResolutionResult().allDependencies.each {
+//            println shade.files(it.getSelected())
+//        }
+        println "\n\n_releaseCompile ResolutionResult().allDependencies"
+        releaseCompile.allDependencies.each {
+            println releaseCompile.allDependencies.find { dep -> dep.name == 'okhttp' }
+            println releaseCompile.files(it)
+        }
+
+        println "\n\nResolvedComponentResult:"
+
+        ResolvedComponentResult result = shade.getIncoming().getResolutionResult().getRoot();
         showConfigurationDependencies(result, 0)
 
-        println ""
+        println "\n\nRenderer:"
         renderer.setOutput(getServices().get(StyledTextOutputFactory.class).create(getClass()));
         renderer.startProject(project);
-        renderer.startConfiguration(configuration);
-        renderer.render(configuration);
-        renderer.completeConfiguration(configuration);
+        renderer.startConfiguration(shade);
+        renderer.render(shade);
+        renderer.completeConfiguration(shade);
     }
 
     def void showConfigurationDependencies(ResolvedComponentResult result, int level) {
@@ -106,4 +132,22 @@ class ShadeTask extends DefaultTask {
     }
 
 
+    def collectModuleComponents = {
+        def dependencies = configurations.vendors.incoming.resolutionResult.allDependencies
+        def moduleDependencies = dependencies.findAll {
+            it instanceof ResolvedDependencyResult && it.requested instanceof ModuleComponentSelector
+        }
+
+        moduleDependencies*.selected.toSet()
+    }
+
+    def collectBinaryArtifacts = {
+        def moduleComponents = collectModuleComponents()
+
+        configurations.vendors.resolvedConfiguration.resolvedArtifacts.findAll { resolvedArtifact ->
+            moduleComponents.any {
+                resolvedArtifact.moduleVersion.id.equals(it.moduleVersion)
+            }
+        }
+    }
 }
