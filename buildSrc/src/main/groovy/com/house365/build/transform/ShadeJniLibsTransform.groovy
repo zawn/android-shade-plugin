@@ -39,7 +39,6 @@ import static com.google.common.base.Preconditions.checkNotNull
  * This only packages the class files. It ignores other files.
  */
 public class ShadeJniLibsTransform extends Transform {
-    private static final boolean DEBUG = true;
 
     private BaseVariant variant
     private LibraryExtension libraryExtension

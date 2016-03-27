@@ -15,6 +15,7 @@ import com.android.build.gradle.internal.variant.BaseVariantOutputData
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.dependency.LibraryDependency
 import com.house365.build.task.LibraryManifestMergeTask
+import com.house365.build.task.ShadeTask
 import com.house365.build.transform.ShadeJarTransform
 import com.house365.build.transform.ShadeJniLibsTransform
 import org.apache.commons.lang3.reflect.FieldUtils
@@ -95,6 +96,9 @@ public class AndroidShadePlugin implements Plugin<Project> {
                             println it
                         }
                     }
+
+                    //def showDependency = project.tasks.maybeCreate("showDependency", ShadeTask)
+                    //project.tasks.findByName("dependencies").finalizedBy showDependency
 
                     // 配置AAR合并.
                     LinkedHashSet<File> linkedHashSet = ShadeJarTransform.getNeedCombineFiles(project, variantData);
