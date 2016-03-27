@@ -13,6 +13,8 @@ import com.android.build.api.transform.QualifiedContent.Scope
 import com.android.build.gradle.AndroidGradleOptions
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.AndroidSourceSet
+import com.android.build.gradle.api.BaseVariant
+import com.android.build.gradle.api.LibraryVariant
 import com.android.build.gradle.internal.api.LibraryVariantImpl
 import com.android.build.gradle.internal.dependency.LibraryDependencyImpl
 import com.android.build.gradle.internal.pipeline.TransformManager
@@ -49,7 +51,7 @@ import static com.google.common.base.Preconditions.checkNotNull
 public class ShadeJarTransform extends Transform {
     public static final boolean DEBUG = false;
 
-    private LibraryVariantImpl variant
+    private BaseVariant variant
     private LibraryExtension libraryExtension
     private boolean isLibrary = true;
     private Project project
@@ -102,16 +104,33 @@ public class ShadeJarTransform extends Transform {
         // and format is SINGLE_JAR so output is a jar
         File jarFile = outputProvider.getContentLocation("combined", getOutputTypes(), getScopes(),
                 Format.JAR);
-        this.variant = getCurrentVariantScope(jarFile)
-        def variantData = variant.getVariantData()
-        variantScope = variantData.getScope()
-        isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
-        if (!isLibrary)
-            throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
-
-        LinkedHashSet<File> needCombineSet = getNeedCombineJars(project, variantData)
         FileUtils.mkdirs(jarFile.getParentFile());
         deleteIfExists(jarFile);
+
+        if (DEBUG)
+            for (TransformInput input : inputs) {
+                for (JarInput jarInput : input.getJarInputs()) {
+                    println jarInput.getFile()
+                }
+
+                for (DirectoryInput directoryInput : input.getDirectoryInputs()) {
+                    println directoryInput.getFile();
+                }
+            }
+
+        this.variant = getCurrentVariantScope(libraryExtension, this, jarFile)
+        LinkedHashSet<File> needCombineSet
+
+        def variantData
+        if (variant instanceof LibraryVariant) {
+            variantData = variant.getVariantData()
+            variantScope = variantData.getScope()
+            isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
+            if (!isLibrary)
+                throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
+
+            needCombineSet = getNeedCombineJars(project, variantData)
+        }
 
         JarMerger jarMerger = new JarMerger(jarFile);
         try {
@@ -131,10 +150,11 @@ public class ShadeJarTransform extends Transform {
                     jarMerger.addFolder(directoryInput.getFile());
                 }
             }
-            for (File file : needCombineSet) {
-                println "combine jar: " + file
-                jarMerger.addJar(file)
-            }
+            if (needCombineSet != null && needCombineSet.size() > 0)
+                for (File file : needCombineSet) {
+                    println "combine jar: " + file
+                    jarMerger.addJar(file)
+                }
         } catch (FileNotFoundException e) {
             throw new TransformException(e);
         } catch (IOException e) {
@@ -142,25 +162,37 @@ public class ShadeJarTransform extends Transform {
         } finally {
             jarMerger.close();
         }
-
-        LinkedHashSet<File> files = ShadeJarTransform.getNeedCombineJars(project, variantData);
-        ShadeJarTransform.removeCombinedJar(variantData.getVariantConfiguration(), files)
+        if (variant instanceof LibraryVariant) {
+            LinkedHashSet<File> files = ShadeJarTransform.getNeedCombineJars(project, variantData);
+            ShadeJarTransform.removeCombinedJar(variantData.getVariantConfiguration(), files)
+        }
     }
 
 
-    LibraryVariantImpl getCurrentVariantScope(File file) {
+    public
+    static BaseVariant getCurrentVariantScope(LibraryExtension libraryExtension, Transform transform, File file) {
         for (LibraryVariantImpl variant : libraryExtension.libraryVariants) {
             LibraryVariantData variantData = variant.variantData
             GlobalScope globalScope = variantData.getScope().getGlobalScope();
-            File parentFile = new File(globalScope.getIntermediatesDir(), "/transforms/" + this.getName() + "/" +
-                    variantData.getVariantConfiguration().getDirName())
+            File parentFile = new File(globalScope.getIntermediatesDir(), "/transforms/" + transform.getName() + "/" +
+                    variant.getDirName())
             if (checkIsParent(file, parentFile))
                 return variant;
+            parentFile = new File(globalScope.getIntermediatesDir(), "/transforms/" + transform.getName() + "/" +
+                    variant.testVariant.getDirName())
+            if (checkIsParent(file, parentFile))
+                return variant.testVariant;
+            parentFile = new File(globalScope.getIntermediatesDir(), "/transforms/" + transform.getName() + "/" +
+                    variant.unitTestVariant.getDirName())
+            if (checkIsParent(file, parentFile))
+                return variant.unitTestVariant;
         }
         return null
     }
 
-    boolean checkIsParent(File child, File possibleParent) {
+    public static boolean checkIsParent(File child, File possibleParent) {
+        if (DEBUG)
+            println "ShadeJarTransform.checkIsParent\n" + child.toString() + "\n" + possibleParent.toString()
         return child.getAbsolutePath().startsWith(possibleParent.getAbsolutePath());
     }
 

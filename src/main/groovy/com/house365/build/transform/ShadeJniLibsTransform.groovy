@@ -11,10 +11,10 @@ import com.android.build.api.transform.*
 import com.android.build.api.transform.QualifiedContent.ContentType
 import com.android.build.api.transform.QualifiedContent.Scope
 import com.android.build.gradle.LibraryExtension
-import com.android.build.gradle.internal.api.LibraryVariantImpl
+import com.android.build.gradle.api.BaseVariant
+import com.android.build.gradle.api.LibraryVariant
 import com.android.build.gradle.internal.pipeline.ExtendedContentType
 import com.android.build.gradle.internal.pipeline.TransformManager
-import com.android.build.gradle.internal.scope.GlobalScope
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.dependency.LibraryDependency
 import com.android.utils.FileUtils
@@ -41,7 +41,7 @@ import static com.google.common.base.Preconditions.checkNotNull
 public class ShadeJniLibsTransform extends Transform {
     private static final boolean DEBUG = true;
 
-    private LibraryVariantImpl variant
+    private BaseVariant variant
     private LibraryExtension libraryExtension
     private boolean isLibrary = true;
     private Project project
@@ -89,16 +89,18 @@ public class ShadeJniLibsTransform extends Transform {
         checkNotNull(outputProvider, "Missing output object for transform " + getName());
 
         jniLibsFolder = outputProvider.getContentLocation("main/lib", getOutputTypes(), getScopes(), Format.DIRECTORY)
-        this.variant = getCurrentVariantScope(jniLibsFolder)
-        variantScope = variant.variantData.getScope()
-        isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
-        if (!isLibrary)
-            throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
-        List<LibraryDependency> libraryDependencies =
-                ShadeJarTransform.getNeedCombineAar(variant.getVariantData(),
-                        ShadeJarTransform.getNeedCombineFiles(project, variant.getVariantData()));
-        for (LibraryDependency dependency : libraryDependencies) {
-            copyFromFolder(dependency.getJniFolder());
+        this.variant = ShadeJarTransform.getCurrentVariantScope(libraryExtension, this, jniLibsFolder)
+        if (variant instanceof LibraryVariant) {
+            variantScope = variant.variantData.getScope()
+            isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
+            if (!isLibrary)
+                throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
+            List<LibraryDependency> libraryDependencies =
+                    ShadeJarTransform.getNeedCombineAar(variant.getVariantData(),
+                            ShadeJarTransform.getNeedCombineFiles(project, variant.getVariantData()));
+            for (LibraryDependency dependency : libraryDependencies) {
+                copyFromFolder(dependency.getJniFolder());
+            }
         }
         for (TransformInput input : inputs) {
             for (JarInput jarInput : input.getJarInputs()) {
@@ -109,23 +111,6 @@ public class ShadeJniLibsTransform extends Transform {
                 copyFromFolder(directoryInput.getFile());
             }
         }
-    }
-
-
-    LibraryVariantImpl getCurrentVariantScope(File file) {
-        for (LibraryVariantImpl variant : libraryExtension.libraryVariants) {
-            LibraryVariantData variantData = variant.variantData
-            GlobalScope globalScope = variantData.getScope().getGlobalScope();
-            File parentFile = new File(globalScope.getIntermediatesDir(), "/transforms/" + this.getName() + "/" +
-                    variantData.getVariantConfiguration().getDirName())
-            if (checkIsParent(file, parentFile))
-                return variant;
-        }
-        return null
-    }
-
-    boolean checkIsParent(File child, File possibleParent) {
-        return child.getAbsolutePath().startsWith(possibleParent.getAbsolutePath());
     }
 
     private void copyFromJar(@NonNull File jarFile) throws IOException {
