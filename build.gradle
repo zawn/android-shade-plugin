@@ -5,6 +5,9 @@ defaultTasks 'assembleRelease'
 buildscript {
     repositories {
         maven {
+            url "E:/IdeaProjects/android-gradle-plugin/repo"
+        }
+        maven {
             url "http://192.168.108.60/nexus/content/groups/public/"
         }
         jcenter()
