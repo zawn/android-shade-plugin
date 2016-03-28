@@ -243,7 +243,10 @@ public class ShadeJarTransform extends Transform {
                 println ""
             }
             shadeConfiguration.allDependencies.each { dependency ->
-                def destDep = compileConfiguration.allDependencies.find { dep -> dep.name == dependency.name && dep.group == dependency.group }
+                def dependencies = compileConfiguration.allDependencies.findAll { dep -> dep.name == dependency.name && dep.group == dependency.group }
+                if (dependencies.size() > 1)
+                    throw new ProjectConfigurationException("They found many same dependence in the configuration:" + dependency)
+                def destDep = dependencies.getAt(0)
                 files.addAll(compileConfiguration.files(destDep))
             }
             if (DEBUG) {
