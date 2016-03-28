@@ -325,9 +325,9 @@ public class ShadeJarTransform extends Transform {
         for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
             LibraryDependency dependency = libraryDependencies.get(n);
             if (DEBUG)
-                println "\n\n ResFolder: " + dependency.getResFolder()
+                println "ResFolder: " + dependency.getResFolder()
             File resFolder = dependency.getResFolder();
-            if (resFolder.isDirectory()) {
+            if (!resFolder.isFile()) {
                 ResourceSet resourceSet =
                         new ResourceSet(dependency.getFolder().getName(), validateEnabled);
                 resourceSet.addSource(resFolder);
@@ -345,8 +345,8 @@ public class ShadeJarTransform extends Transform {
 
         if (DEBUG) {
             println "Combined with all the resource"
-            resourceSets.each { ResourceSet assetSet ->
-                println assetSet
+            resourceSets.each { ResourceSet resourceSet ->
+                println resourceSet
             }
             println ""
         }
@@ -364,7 +364,9 @@ public class ShadeJarTransform extends Transform {
         for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
             LibraryDependency dependency = libraryDependencies.get(n);
             File assetFolder = dependency.getAssetsFolder();
-            if (assetFolder.isDirectory()) {
+            if (DEBUG)
+                println assetFolder
+            if (!assetFolder.isFile()) {
                 AssetSet assetSet = new AssetSet(dependency.getFolder().getName());
                 assetSet.addSource(assetFolder);
                 assetSets.add(assetSet);
