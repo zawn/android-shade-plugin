@@ -5,24 +5,24 @@
 package com.house365.build
 
 import com.android.annotations.NonNull
+import com.android.build.api.transform.Transform
 import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.AndroidSourceSet
 import com.android.build.gradle.internal.api.LibraryVariantImpl
 import com.android.build.gradle.internal.dependency.ManifestDependencyImpl
+import com.android.build.gradle.internal.pipeline.TransformManager
 import com.android.build.gradle.internal.scope.VariantScope
 import com.android.build.gradle.internal.variant.BaseVariantOutputData
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.dependency.LibraryDependency
 import com.android.builder.model.Version
+import com.house365.build.task.ClassPathTask
 import com.house365.build.task.LibraryManifestMergeTask
 import com.house365.build.transform.ShadeJarTransform
 import com.house365.build.transform.ShadeJniLibsTransform
 import org.apache.commons.lang3.reflect.FieldUtils
-import org.gradle.api.Action
-import org.gradle.api.Plugin
-import org.gradle.api.Project
-import org.gradle.api.ProjectConfigurationException
+import org.gradle.api.*
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ConfigurationContainer
 import org.gradle.api.artifacts.DependencyResolutionListener
@@ -31,6 +31,7 @@ import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.compile.AbstractCompile
 
 import java.lang.reflect.Field
+import java.lang.reflect.Method
 
 import static com.house365.build.transform.ShadeJarTransform.DEBUG
 
@@ -106,6 +107,17 @@ public class AndroidShadePlugin implements Plugin<Project> {
                             println it
                         }
                     }
+
+                    Method getTaskNamePrefixMethod = TransformManager.class.getDeclaredMethod("getTaskNamePrefix", Transform.class)
+                    getTaskNamePrefixMethod.setAccessible(true);
+                    String prefix = getTaskNamePrefixMethod.invoke(null, shadeJarTransform)
+                    String taskName = scope.getTaskName(prefix);
+                    // 大写第一个字母
+                    String pinyin = String.valueOf(taskName.charAt(0)).toUpperCase().concat(taskName.substring(1));
+                    def pathTask = project.tasks.create("clean" + pinyin, ClassPathTask)
+                    pathTask.variantData = variantData
+                    Task task = project.tasks.findByName(taskName)
+                    task.finalizedBy pathTask
 
                     //def showDependency = project.tasks.maybeCreate("showDependency", ShadeTask)
                     //project.tasks.findByName("dependencies").finalizedBy showDependency
