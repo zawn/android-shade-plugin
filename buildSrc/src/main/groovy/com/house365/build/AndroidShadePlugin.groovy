@@ -14,8 +14,8 @@ import com.android.build.gradle.internal.scope.VariantScope
 import com.android.build.gradle.internal.variant.BaseVariantOutputData
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.dependency.LibraryDependency
+import com.android.builder.model.Version
 import com.house365.build.task.LibraryManifestMergeTask
-import com.house365.build.task.ShadeTask
 import com.house365.build.transform.ShadeJarTransform
 import com.house365.build.transform.ShadeJniLibsTransform
 import org.apache.commons.lang3.reflect.FieldUtils
@@ -50,6 +50,16 @@ public class AndroidShadePlugin implements Plugin<Project> {
     @Override
     void apply(Project project) {
         this.project = project
+        String[] strings = Version.ANDROID_GRADLE_PLUGIN_VERSION.split("-")
+        if (strings.size() > 0 && strings[0].equals("2.0.0")) {
+
+        } else {
+            throw new ProjectConfigurationException("Android Shade Plugin needs and match the version " +
+                    "used in conjunction with Android Plugin for Gradle. Requested 2.0.0,but found version " +
+                    Version.ANDROID_GRADLE_PLUGIN_VERSION, null)
+        }
+
+
         android = project.hasProperty("android") ? project.android : null
         this.android.getSourceSets().each { AndroidSourceSet sourceSet ->
             ConfigurationContainer configurations = project.getConfigurations();
