@@ -3,6 +3,10 @@ import static org.gradle.api.JavaVersion.VERSION_1_6
 apply plugin: 'groovy'
 
 repositories {
+    //自定义的Android Plugin for Gradle
+//    maven {
+//        url "E:/IdeaProjects/android-gradle-plugin/repo"
+//    }
     mavenLocal()
     maven {
         url "http://192.168.108.60/nexus/content/groups/public/"
@@ -28,11 +32,20 @@ sourceSets {
     }
 }
 
+tasks.withType(JavaCompile) {
+    options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+}
+tasks.withType(GroovyCompile) {
+    options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+}
+
 dependencies {
     compile 'org.apache.commons:commons-lang3:3.4'
     compile gradleApi()
     compile localGroovy()
-    provided  'com.android.tools.build:gradle:1.5.0'
+    provided 'com.android.tools.build:gradle:2.0.0-beta7'
+    //自定义的Android Plugin for Gradle
+    //provided 'com.house365.tools.build:gradle:2.0.0-SNAPSHOT'
 }
 
 apply from: 'build-config/gradle-push.gradle'
