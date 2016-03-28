@@ -16,6 +16,8 @@ import org.gradle.api.tasks.diagnostics.internal.dependencies.AsciiDependencyRep
 import org.gradle.logging.StyledTextOutputFactory
 
 /**
+ * 测试代码.
+ *
  * User: Ralf Wondratschek
  */
 class ShadeTask extends DefaultTask {
