@@ -119,6 +119,10 @@ public class AndroidShadePlugin implements Plugin<Project> {
                     Task task = project.tasks.findByName(taskName)
                     task.finalizedBy pathTask
 
+                    //transformClassesWithShadeJarForRelease
+                    //transformResourcesWithMergeJavaResForRelease
+                    project.tasks.findByName(taskName.replace("ShadeJar", "MergeJavaRes").replace("Classes", "Resources")).dependsOn task
+
                     //def showDependency = project.tasks.maybeCreate("showDependency", ShadeTask)
                     //project.tasks.findByName("dependencies").finalizedBy showDependency
 
