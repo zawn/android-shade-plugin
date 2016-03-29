@@ -4,7 +4,6 @@
 
 package com.house365.build.transform
 
-import com.android.SdkConstants
 import com.android.annotations.NonNull
 import com.android.annotations.Nullable
 import com.android.build.api.transform.*
@@ -17,21 +16,27 @@ import com.android.build.gradle.api.BaseVariant
 import com.android.build.gradle.api.LibraryVariant
 import com.android.build.gradle.internal.api.LibraryVariantImpl
 import com.android.build.gradle.internal.dependency.LibraryDependencyImpl
+import com.android.build.gradle.internal.dependency.ManifestDependencyImpl
 import com.android.build.gradle.internal.pipeline.TransformManager
 import com.android.build.gradle.internal.scope.ConventionMappingHelper
 import com.android.build.gradle.internal.scope.GlobalScope
 import com.android.build.gradle.internal.transforms.JarMerger
+import com.android.build.gradle.internal.variant.BaseVariantData
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.core.VariantConfiguration
 import com.android.builder.dependency.JarDependency
 import com.android.builder.dependency.LibraryDependency
-import com.android.builder.signing.SignedJarBuilder
 import com.android.ide.common.res2.AssetSet
 import com.android.ide.common.res2.ResourceSet
 import com.android.utils.FileUtils
 import com.google.common.collect.Lists
 import com.google.common.collect.Sets
 import com.house365.build.AndroidShadePlugin
+import com.house365.build.task.LibraryManifestMergeTask
+import com.house365.build.util.ZipEntryFilter
+import com.tonicsystems.jarjar.PatternElement
+import com.tonicsystems.jarjar.RulesFileParser
+import com.tonicsystems.jarjar.util.StandaloneJarProcessor
 import org.gradle.api.Project
 import org.gradle.api.ProjectConfigurationException
 import org.gradle.api.artifacts.Configuration
@@ -39,6 +44,9 @@ import org.gradle.api.artifacts.ConfigurationContainer
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.DependencySet
 import org.gradle.api.internal.ConventionMapping
+import org.gradle.api.logging.LogLevel
+import org.gradle.api.logging.Logger
+import org.gradle.api.logging.Logging
 
 import java.lang.reflect.Field
 
@@ -53,18 +61,18 @@ import static com.google.common.base.Preconditions.checkNotNull
  */
 public class ShadeJarTransform extends Transform {
     public static final boolean DEBUG = false;
-
+    private final Logger logger;
     private BaseVariant variant
     private LibraryExtension libraryExtension
     private boolean isLibrary = true;
     private Project project
     private variantScope
-    private static logger = org.slf4j.LoggerFactory.getLogger(ShadeJarTransform.class)
 
 
     public ShadeJarTransform(Project project, LibraryExtension LibraryExtension) {
         this.project = project
         this.libraryExtension = LibraryExtension
+        this.logger = Logging.getLogger(ShadeJarTransform.class);
     }
 
     @NonNull
@@ -105,7 +113,9 @@ public class ShadeJarTransform extends Transform {
 
         // all the output will be the same since the transform type is COMBINED.
         // and format is SINGLE_JAR so output is a jar
-        File jarFile = outputProvider.getContentLocation("combined", getOutputTypes(), getScopes(),
+        File jarFile = outputProvider.getContentLocation("combined-temp", getOutputTypes(), getScopes(),
+                Format.JAR);
+        File rJarFile = outputProvider.getContentLocation("r", getOutputTypes(), getScopes(),
                 Format.JAR);
         FileUtils.mkdirs(jarFile.getParentFile());
         deleteIfExists(jarFile);
@@ -135,27 +145,45 @@ public class ShadeJarTransform extends Transform {
             needCombineSet = getNeedCombineJars(project, variantData)
         }
 
+        def packagingOptions = variantScope.getGlobalScope().getExtension().getPackagingOptions()
+        jarMerger(jarFile, inputs, needCombineSet,
+                new ZipEntryFilter.JarWhitoutRFilter(packagingOptions, null))
+        jarMerger(rJarFile, inputs, null,
+                new ZipEntryFilter.JarRFilter(packagingOptions, null))
+
+        if (variant instanceof LibraryVariant) {
+            File outJar = outputProvider.getContentLocation("combined", getOutputTypes(), getScopes(),
+                    Format.JAR);
+            // JarJar
+            jarjar(variant.getVariantData(), jarFile, outJar)
+            jarFile.delete()
+        }
+
+        if (variant instanceof LibraryVariant) {
+            LinkedHashSet<File> files = ShadeJarTransform.getNeedCombineJars(project, variantData);
+            ShadeJarTransform.removeCombinedJar(variantData.getVariantConfiguration(), files)
+        }
+    }
+
+    private void jarMerger(File jarFile, Collection<TransformInput> inputs, LinkedHashSet<File> needCombineSet, ZipEntryFilter.PackagingFilter filter) {
         JarMerger jarMerger = new JarMerger(jarFile);
         try {
-            jarMerger.setFilter(new SignedJarBuilder.IZipEntryFilter() {
-                @Override
-                public boolean checkEntry(String archivePath)
-                        throws com.android.sdklib.internal.build.SignedJarBuilder.IZipEntryFilter.ZipAbortException {
-                    return archivePath.endsWith(SdkConstants.DOT_CLASS);
-                }
-            });
+            jarMerger.setFilter(filter);
             for (TransformInput input : inputs) {
                 for (JarInput jarInput : input.getJarInputs()) {
+                    filter.reset(jarInput.getFile())
                     jarMerger.addJar(jarInput.getFile());
                 }
 
                 for (DirectoryInput directoryInput : input.getDirectoryInputs()) {
+                    filter.reset(directoryInput.getFile())
                     jarMerger.addFolder(directoryInput.getFile());
                 }
             }
             if (needCombineSet != null && needCombineSet.size() > 0)
                 for (File file : needCombineSet) {
                     println "combine jar: " + file
+                    filter.reset(file)
                     jarMerger.addJar(file)
                 }
         } catch (FileNotFoundException e) {
@@ -165,12 +193,39 @@ public class ShadeJarTransform extends Transform {
         } finally {
             jarMerger.close();
         }
-        if (variant instanceof LibraryVariant) {
-            LinkedHashSet<File> files = ShadeJarTransform.getNeedCombineJars(project, variantData);
-            ShadeJarTransform.removeCombinedJar(variantData.getVariantConfiguration(), files)
-        }
     }
 
+    def jarjar(BaseVariantData baseVariantData, File jarFile, File outJar) {
+        def combineFiles = getNeedCombineFiles(project, baseVariantData);
+        List<LibraryDependency> libraryDependencies = getNeedCombineAar(baseVariantData, combineFiles);
+        libraryDependencies.each {
+            println it
+        }
+
+        StringBuilder stringBuilder = new StringBuilder();
+
+        String appPackageName = VariantConfiguration.getManifestPackage(baseVariantData.variantConfiguration.getMainManifest());
+        println "Project PackageName:" + appPackageName
+        List<ManifestDependencyImpl> libraries = LibraryManifestMergeTask.getManifestDependencies(libraryDependencies)
+        libraries.each {
+            def manifestPackage = VariantConfiguration.getManifestPackage(it.getManifest())
+            println "Library PackageName:" + manifestPackage
+
+            def rule = "rule " + manifestPackage + ".R*  " + appPackageName + ".R@1"
+            println "   " + rule
+            stringBuilder.append(rule).append("\r\n");
+        }
+        List<PatternElement> rules = RulesFileParser.parse(stringBuilder.toString());
+        boolean verbose = logger.isEnabled(LogLevel.INFO);
+        boolean skipManifest = false
+        com.android.utils.FileUtils.mkdirs(outJar.getParentFile());
+        deleteIfExists(outJar);
+        outJar.createNewFile();
+        def constructor = Class.forName("com.tonicsystems.jarjar.MainProcessor").getDeclaredConstructors()[0]
+        constructor.setAccessible(true)
+        def mainProcessor = constructor.newInstance(rules, verbose, skipManifest)
+        StandaloneJarProcessor.run(jarFile, outJar, mainProcessor)
+    }
 
     public
     static BaseVariant getCurrentVariantScope(LibraryExtension libraryExtension, Transform transform, File file) {
