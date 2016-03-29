@@ -40,12 +40,13 @@ tasks.withType(GroovyCompile) {
 }
 
 dependencies {
+    compile 'org.sonatype.plugins:jarjar-maven-plugin:1.9'
     compile 'org.apache.commons:commons-lang3:3.4'
-    compile gradleApi()
-    compile localGroovy()
     provided 'com.android.tools.build:gradle:2.0.0-beta7'
     //自定义的Android Plugin for Gradle
     //provided 'com.house365.tools.build:gradle:2.0.0-SNAPSHOT'
+    compile gradleApi()
+    compile localGroovy()
 }
 
 apply from: 'build-config/gradle-push.gradle'
