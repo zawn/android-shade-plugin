@@ -10,6 +10,7 @@ import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.Validate;
 
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
@@ -120,7 +121,14 @@ public class MethodInvokeUtils {
             }
         }
         if (bestMatch != null) {
-            MemberUtils.setAccessibleWorkaround(bestMatch);
+            final Member m = (Member) bestMatch;
+            if (!bestMatch.isAccessible() && Modifier.isPublic(m.getModifiers())) {
+                try {
+                    bestMatch.setAccessible(true);
+                } catch (final SecurityException e) { // NOPMD
+                    // ignore in favor of subsequent IllegalAccessException
+                }
+            }
         }
         return bestMatch;
     }
