@@ -194,15 +194,13 @@ public class ShadeJarTransform extends Transform {
     def jarjar(BaseVariantData baseVariantData, File jarFile, File outJar) {
         def combineFiles = getNeedCombineFiles(project, baseVariantData);
         List<LibraryDependency> libraryDependencies = getNeedCombineAar(baseVariantData, combineFiles);
-        libraryDependencies.each {
-            println it
-        }
 
         StringBuilder stringBuilder = new StringBuilder();
 
         String appPackageName = VariantConfiguration.getManifestPackage(baseVariantData.variantConfiguration.getMainManifest());
-        println "Project PackageName:" + appPackageName
         List<ManifestDependencyImpl> libraries = LibraryManifestMergeTask.getManifestDependencies(libraryDependencies)
+        if (libraries.size() > 0)
+            println "Project PackageName:" + appPackageName
         libraries.each {
             def manifestPackage = VariantConfiguration.getManifestPackage(it.getManifest())
             println "Library PackageName:" + manifestPackage

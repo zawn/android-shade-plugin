@@ -113,10 +113,7 @@ public class ShadeTaskManager {
 
         // 配置AAR合并.
         LinkedHashSet<File> linkedHashSet = ShadeJarTransform.getNeedCombineFiles(project, variantData);
-        for (File file : linkedHashSet) {
-            logger.lifecycle(file.toString());
-        }
-        logger.lifecycle("\n");
+
         List<LibraryDependency> libraryDependencies = ShadeJarTransform.getNeedCombineAar(variantData, linkedHashSet);
 
         if (libraryDependencies != null && libraryDependencies.size() > 0) {
@@ -147,7 +144,7 @@ public class ShadeTaskManager {
             LibraryVariantData variantData,
             List<LibraryDependency> libraryDependencies) {
 
-        logger.lifecycle("ShadeTaskManager.appendShadeResourcesTask");
+        logger.info("ShadeTaskManager.appendShadeResourcesTask");
         final String taskName = variantData.getScope().getTaskName("package", "Resources");
         final MergeResources mergeResourcesTask = (MergeResources) tasks.named(taskName);
 
@@ -156,7 +153,7 @@ public class ShadeTaskManager {
                 variantData.getScope().getGlobalScope().getProject());
         for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
             LibraryDependency dependency = libraryDependencies.get(n);
-            logger.lifecycle("ResFolder: " + dependency.getResFolder());
+            logger.info("ResFolder: " + dependency.getResFolder());
             File resFolder = dependency.getResFolder();
             if (!resFolder.isFile()) {
                 ResourceSet resourceSet =
@@ -190,14 +187,14 @@ public class ShadeTaskManager {
             LibraryVariantData variantData,
             List<LibraryDependency> libraryDependencies) {
 
-        logger.lifecycle("ShadeTaskManager.appendShadeAssetsTask");
+        logger.info("ShadeTaskManager.appendShadeAssetsTask");
         MergeSourceSetFolders mergeAssetsTask = variantData.mergeAssetsTask;
 
         final LinkedHashSet<AssetSet> assetSets = Sets.newLinkedHashSet();
         for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
             LibraryDependency dependency = libraryDependencies.get(n);
             File assetFolder = dependency.getAssetsFolder();
-            logger.lifecycle("AssetFolder: " + assetFolder);
+            logger.info("AssetFolder: " + assetFolder);
             if (!assetFolder.isFile()) {
                 AssetSet assetSet = new AssetSet(dependency.getFolder().getName());
                 assetSet.addSource(assetFolder);
