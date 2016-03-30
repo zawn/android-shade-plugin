@@ -137,7 +137,7 @@ public class AndroidShadePlugin implements Plugin<Project> {
                         }
 
                         ShadeJarTransform.addAssetsToBundle(variantData, libraryDependencies)
-                        ShadeJarTransform.addResourceToBundle(variantData, libraryDependencies)
+                        ShadeJarTransform.addResourceToBundle(project, variantData, libraryDependencies)
                         // Merge AndroidManifest.xml
                         List<ManifestDependencyImpl> libraries = LibraryManifestMergeTask.getManifestDependencies(libraryDependencies)
                         def libManifestMergeTask = project.tasks.create(scope.getTaskName("process", "ShadeManifest"), LibraryManifestMergeTask)

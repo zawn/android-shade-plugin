@@ -373,7 +373,7 @@ public class ShadeJarTransform extends Transform {
      * @param combinedSet
      */
     public
-    static void addResourceToBundle(LibraryVariantData variantData, List<LibraryDependency> libraryDependencies) {
+    static void addResourceToBundle(Project project, LibraryVariantData variantData, List<LibraryDependency> libraryDependencies) {
         final boolean validateEnabled = AndroidGradleOptions.isResourceValidationEnabled(
                 variantData.getScope().getGlobalScope().getProject());
         List<ResourceSet> resourceSets = Lists.newArrayList();
@@ -391,10 +391,13 @@ public class ShadeJarTransform extends Transform {
             }
         }
 
+
+        def taskName = variantData.getScope().getTaskName("package", "Resources")
+        def task = project.tasks.findByName(taskName)
         ConventionMapping conventionMapping =
-                (ConventionMapping) ((GroovyObject) variantData.mergeResourcesTask).getProperty("conventionMapping");
+                (ConventionMapping) ((GroovyObject) task).getProperty("conventionMapping");
         resourceSets.addAll(conventionMapping.getConventionValue(new ArrayList<ResourceSet>(), "inputResourceSets", false));
-        ConventionMappingHelper.map(variantData.mergeResourcesTask, "inputResourceSets") {
+        ConventionMappingHelper.map(task, "inputResourceSets") {
             resourceSets
         }
 
@@ -518,7 +521,7 @@ public class ShadeJarTransform extends Transform {
 
         @Override
         boolean isOptional() {
-            return true
+            return false
         }
 
         @Override
