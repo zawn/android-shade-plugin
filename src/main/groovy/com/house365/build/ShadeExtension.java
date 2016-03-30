@@ -156,9 +156,9 @@ public class ShadeExtension {
      */
     protected static class ConfigurationCache {
 
-        private LinkedHashMap<String, Configuration> configurations = new LinkedHashMap();
+        private LinkedHashMap<String, Configuration> configurations = new LinkedHashMap<String, Configuration>();
 
-        private LinkedHashMap<String, HashSet<String>> configExtendsMap = new LinkedHashMap();
+        private LinkedHashMap<String, HashSet<String>> configExtendsMap = new LinkedHashMap<String, HashSet<String>>();
 
         private boolean isComputeExtends = false;
 

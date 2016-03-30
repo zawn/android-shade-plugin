@@ -10,6 +10,7 @@ import com.android.build.api.transform.*
 import com.android.build.api.transform.QualifiedContent.ContentType
 import com.android.build.api.transform.QualifiedContent.Scope
 import com.android.build.gradle.AndroidGradleOptions
+import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.AndroidSourceSet
 import com.android.build.gradle.api.BaseVariant
@@ -69,7 +70,7 @@ public class ShadeJarTransform extends Transform {
     private variantScope
 
 
-    public ShadeJarTransform(Project project, LibraryExtension LibraryExtension) {
+    public ShadeJarTransform(Project project, BaseExtension LibraryExtension) {
         this.project = project
         this.libraryExtension = LibraryExtension
         this.logger = Logging.getLogger(ShadeJarTransform.class);

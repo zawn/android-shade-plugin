@@ -10,6 +10,7 @@ import com.android.annotations.Nullable
 import com.android.build.api.transform.*
 import com.android.build.api.transform.QualifiedContent.ContentType
 import com.android.build.api.transform.QualifiedContent.Scope
+import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.BaseVariant
 import com.android.build.gradle.api.LibraryVariant
@@ -49,7 +50,7 @@ public class ShadeJniLibsTransform extends Transform {
     File jniLibsFolder
 
 
-    public ShadeJniLibsTransform(Project project, LibraryExtension LibraryExtension) {
+    public ShadeJniLibsTransform(Project project, BaseExtension LibraryExtension) {
         this.project = project
         this.libraryExtension = LibraryExtension
     }
