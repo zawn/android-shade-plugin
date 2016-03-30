@@ -9,7 +9,6 @@ import com.android.annotations.Nullable
 import com.android.build.api.transform.*
 import com.android.build.api.transform.QualifiedContent.ContentType
 import com.android.build.api.transform.QualifiedContent.Scope
-import com.android.build.gradle.AndroidGradleOptions
 import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.AndroidSourceSet
@@ -19,7 +18,6 @@ import com.android.build.gradle.internal.api.LibraryVariantImpl
 import com.android.build.gradle.internal.dependency.LibraryDependencyImpl
 import com.android.build.gradle.internal.dependency.ManifestDependencyImpl
 import com.android.build.gradle.internal.pipeline.TransformManager
-import com.android.build.gradle.internal.scope.ConventionMappingHelper
 import com.android.build.gradle.internal.scope.GlobalScope
 import com.android.build.gradle.internal.transforms.JarMerger
 import com.android.build.gradle.internal.variant.BaseVariantData
@@ -27,12 +25,10 @@ import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.core.VariantConfiguration
 import com.android.builder.dependency.JarDependency
 import com.android.builder.dependency.LibraryDependency
-import com.android.ide.common.res2.AssetSet
-import com.android.ide.common.res2.ResourceSet
 import com.android.utils.FileUtils
 import com.google.common.collect.Lists
 import com.google.common.collect.Sets
-import com.house365.build.AndroidShadePlugin
+import com.house365.build.ShadeExtension
 import com.house365.build.task.LibraryManifestMergeTask
 import com.house365.build.util.ZipEntryFilter
 import com.tonicsystems.jarjar.PatternElement
@@ -44,7 +40,6 @@ import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ConfigurationContainer
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.DependencySet
-import org.gradle.api.internal.ConventionMapping
 import org.gradle.api.logging.LogLevel
 import org.gradle.api.logging.Logger
 import org.gradle.api.logging.Logging
@@ -281,7 +276,7 @@ public class ShadeJarTransform extends Transform {
      */
     private static Set<File> getShadeLibs(@NonNull ConfigurationContainer configurations,
                                           @NonNull AndroidSourceSet sourceSet, Configuration compileConfiguration) {
-        def shadeConfigurationName = AndroidShadePlugin.getShadeConfigurationName(sourceSet.getName())
+        def shadeConfigurationName = ShadeExtension.getShadeConfigurationName(sourceSet.getName())
         def shadeConfiguration = configurations.findByName(shadeConfigurationName);
         Set<File> files = new HashSet<>();
         if (shadeConfiguration != null) {
@@ -365,87 +360,6 @@ public class ShadeJarTransform extends Transform {
                 }
         }
         return needCombineJars
-    }
-
-    /**
-     * 将Shade AAR中的Resource合并进bundle.
-     *
-     * @param variantData
-     * @param combinedSet
-     */
-    public
-    static void addResourceToBundle(Project project, LibraryVariantData variantData, List<LibraryDependency> libraryDependencies) {
-        final boolean validateEnabled = AndroidGradleOptions.isResourceValidationEnabled(
-                variantData.getScope().getGlobalScope().getProject());
-        List<ResourceSet> resourceSets = Lists.newArrayList();
-        for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
-            LibraryDependency dependency = libraryDependencies.get(n);
-            if (DEBUG)
-                println "ResFolder: " + dependency.getResFolder()
-            File resFolder = dependency.getResFolder();
-            if (!resFolder.isFile()) {
-                ResourceSet resourceSet =
-                        new ResourceSet(dependency.getFolder().getName(), validateEnabled);
-                resourceSet.addSource(resFolder);
-                resourceSet.setFromDependency(true);
-                resourceSets.add(resourceSet);
-            }
-        }
-
-
-        def taskName = variantData.getScope().getTaskName("package", "Resources")
-        def task = project.tasks.findByName(taskName)
-        ConventionMapping conventionMapping =
-                (ConventionMapping) ((GroovyObject) task).getProperty("conventionMapping");
-        resourceSets.addAll(conventionMapping.getConventionValue(new ArrayList<ResourceSet>(), "inputResourceSets", false));
-        ConventionMappingHelper.map(task, "inputResourceSets") {
-            resourceSets
-        }
-
-        if (DEBUG) {
-            println "Combined with all the resource"
-            resourceSets.each { ResourceSet resourceSet ->
-                println resourceSet
-            }
-            println ""
-        }
-    }
-
-    /**
-     * 将Shade AAR中的Asset合并进bundle.
-     *
-     * @param variantData
-     * @param combinedSet
-     */
-    public
-    static void addAssetsToBundle(LibraryVariantData variantData, List<LibraryDependency> libraryDependencies) {
-        List<AssetSet> assetSets = Lists.newArrayList();
-        for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
-            LibraryDependency dependency = libraryDependencies.get(n);
-            File assetFolder = dependency.getAssetsFolder();
-            if (DEBUG)
-                println assetFolder
-            if (!assetFolder.isFile()) {
-                AssetSet assetSet = new AssetSet(dependency.getFolder().getName());
-                assetSet.addSource(assetFolder);
-                assetSets.add(assetSet);
-            }
-        }
-
-        ConventionMapping conventionMapping =
-                (ConventionMapping) ((GroovyObject) variantData.mergeAssetsTask).getProperty("conventionMapping");
-        assetSets.addAll(conventionMapping.getConventionValue(new ArrayList<AssetSet>(), "inputDirectorySets", false));
-        ConventionMappingHelper.map(variantData.mergeAssetsTask, "inputDirectorySets") {
-            assetSets
-        }
-
-        if (DEBUG) {
-            println "Combined with all the asset"
-            assetSets.each { AssetSet assetSet ->
-                println assetSet
-            }
-            println ""
-        }
     }
 
     /**
