@@ -25,7 +25,7 @@
             jcenter()
         }
         dependencies {
-            classpath 'com.house365.build:android-shade-plugin:2.0.0-beta7'
+            classpath 'com.house365.build:android-shade-plugin:latest.release'
         }
     }
     
