@@ -4,7 +4,8 @@ import com.android.annotations.NonNull;
 import com.android.build.gradle.internal.packaging.PackagingFileAction;
 import com.android.build.gradle.internal.packaging.ParsedPackagingOptions;
 import com.android.builder.packaging.DuplicateFileException;
-import com.android.sdklib.internal.build.SignedJarBuilder;
+import com.android.builder.packaging.ZipAbortException;
+import com.android.builder.packaging.ZipEntryFilter;
 import com.google.common.collect.Lists;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
@@ -20,33 +21,33 @@ import static com.android.SdkConstants.DOT_CLASS;
 /**
  * Created by ZhangZhenli on 2016/3/29.
  */
-public class ZipEntryFilter {
+public class ZipEntryFilterUtil {
 
-    private static final Logger mLogger = Logging.getLogger(ZipEntryFilter.class);
+    private static final Logger mLogger = Logging.getLogger(ZipEntryFilterUtil.class);
     private static final Pattern pattern = Pattern.compile("META-INF/MANIFEST.MF");
 
     public static final class JarWhitoutRFilter extends PackagingFilter {
 
-        public JarWhitoutRFilter(ParsedPackagingOptions packagingOptions, SignedJarBuilder.IZipEntryFilter parentFilter) {
+        public JarWhitoutRFilter(ParsedPackagingOptions packagingOptions, ZipEntryFilter parentFilter) {
             super(packagingOptions, parentFilter);
         }
 
         @Override
         public boolean checkEntry(String archivePath) throws ZipAbortException {
-            return ZipEntryFilter.checkEntry(ZipEntryFilter.checkWithoutR(), archivePath) &&
+            return ZipEntryFilterUtil.checkEntry(ZipEntryFilterUtil.checkWithoutR(), archivePath) &&
                     super.checkEntry(archivePath);
         }
     }
 
     public static final class JarRFilter extends PackagingFilter {
 
-        public JarRFilter(ParsedPackagingOptions packagingOptions, SignedJarBuilder.IZipEntryFilter parentFilter) {
+        public JarRFilter(ParsedPackagingOptions packagingOptions, ZipEntryFilter parentFilter) {
             super(packagingOptions, parentFilter);
         }
 
         @Override
         public boolean checkEntry(String archivePath) throws ZipAbortException {
-            return !ZipEntryFilter.checkEntry(ZipEntryFilter.checkWithoutR(), archivePath) &&
+            return !ZipEntryFilterUtil.checkEntry(ZipEntryFilterUtil.checkWithoutR(), archivePath) &&
                     super.checkEntry(archivePath);
         }
     }
@@ -66,26 +67,26 @@ public class ZipEntryFilter {
 
         HashSet<String> mAddedFirstFiles = new HashSet<String>();
         @NonNull
-        private SignedJarBuilder.IZipEntryFilter parentFilter;
+        private ZipEntryFilter parentFilter;
 
         private ParsedPackagingOptions packagingOptions;
 
-        public PackagingFilter(ParsedPackagingOptions packagingOptions, SignedJarBuilder.IZipEntryFilter parentFilter) {
+        public PackagingFilter(ParsedPackagingOptions packagingOptions, ZipEntryFilter parentFilter) {
             this.packagingOptions = packagingOptions;
             this.parentFilter = parentFilter;
         }
 
         /**
-         * Implementation of the {@link SignedJarBuilder.IZipEntryFilter} contract which only
+         * Implementation of the {@link ZipEntryFilter} contract which only
          * cares about copying or ignoring files since merging is handled differently.
          *
          * @param archivePath the archive file path of the entry
          * @return true if the archive entry satisfies the filter, false otherwise.
-         * @throws SignedJarBuilder.IZipEntryFilter.ZipAbortException
+         * @throws ZipAbortException
          */
         @Override
         public boolean checkEntry(@NonNull String archivePath)
-                throws SignedJarBuilder.IZipEntryFilter.ZipAbortException {
+                throws ZipAbortException {
 
             if (pattern.matcher(archivePath).matches()) {
                 return false;
@@ -128,7 +129,7 @@ public class ZipEntryFilter {
     /**
      * Filter to detect duplicate entries
      */
-    public static class DuplicateZipFilter implements SignedJarBuilder.IZipEntryFilter {
+    public static class DuplicateZipFilter implements ZipEntryFilter {
         private final HashMap<String, File> mAddedFiles = new HashMap<String, File>();
 
         private File mInputFile;
@@ -173,22 +174,22 @@ public class ZipEntryFilter {
         }
     }
 
+
     /**
      * A filter to filter out binary files like .class
      */
-    public static final class NoJavaClassZipFilter implements SignedJarBuilder.IZipEntryFilter {
+    private static final class NoJavaClassZipFilter implements ZipEntryFilter {
         @NonNull
-        private final SignedJarBuilder.IZipEntryFilter parentFilter;
+        private final ZipEntryFilter parentFilter;
 
-        private NoJavaClassZipFilter(@NonNull SignedJarBuilder.IZipEntryFilter parentFilter) {
+        private NoJavaClassZipFilter(@NonNull ZipEntryFilter parentFilter) {
             this.parentFilter = parentFilter;
         }
 
 
         @Override
         public boolean checkEntry(String archivePath) throws ZipAbortException {
-            return (parentFilter != null ? parentFilter.checkEntry(archivePath) : true) &&
-                    !archivePath.endsWith(DOT_CLASS);
+            return parentFilter.checkEntry(archivePath) && !archivePath.endsWith(DOT_CLASS);
         }
     }
 

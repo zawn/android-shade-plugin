@@ -1,4 +1,3 @@
-import static org.gradle.api.JavaVersion.VERSION_1_6
 import static org.gradle.api.JavaVersion.VERSION_1_8
 
 apply plugin: 'groovy'
@@ -41,7 +40,9 @@ tasks.withType(GroovyCompile) {
 }
 
 dependencies {
-    compile 'org.sonatype.plugins:jarjar-maven-plugin:1.9'
+    compile('org.sonatype.plugins:jarjar-maven-plugin:1.9') {
+        transitive false
+    }
     compile 'org.apache.commons:commons-lang3:3.4'
     provided 'com.android.tools.build:gradle:2.2.2'
     //自定义的Android Plugin for Gradle

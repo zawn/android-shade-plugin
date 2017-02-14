@@ -74,11 +74,11 @@ public class ShadePlugin implements Plugin<Project> {
                     "The 'com.baseExtension.library' plugin not being applied, Android shade plugins does not work.");
         }
         String[] strings = Version.ANDROID_GRADLE_PLUGIN_VERSION.split("-");
-        if (strings.length > 0 && strings[0].equals("2.0.0")) {
-
+        if (strings.length > 0 && strings[0].matches("^2.2.(\\*|\\d+)$")) {
+            // version match
         } else {
             throw new ProjectConfigurationException("Android Shade Plugin needs and match the version " +
-                    "used in conjunction with Android Plugin for Gradle. Requested 2.0.0,but found version " +
+                    "used in conjunction with Android Plugin for Gradle. Requested 2.2.X,but found version " +
                     Version.ANDROID_GRADLE_PLUGIN_VERSION, null);
         }
     }
@@ -124,7 +124,7 @@ public class ShadePlugin implements Plugin<Project> {
      * 创建相关任务.
      */
     private void createTasks() throws IllegalAccessException {
-
+        System.out.println("ShadePlugin.createTasks");
         shadeJarTransform = new ShadeJarTransform(project, baseExtension);
         baseExtension.registerTransform(shadeJarTransform);
 
@@ -151,7 +151,7 @@ public class ShadePlugin implements Plugin<Project> {
      * @throws IllegalAccessException
      */
     public void createShadeActionTasks() throws IllegalAccessException {
-
+        System.out.println("ShadePlugin.createShadeActionTasks");
         final VariantManager variantManager = (VariantManager) FieldUtils.readField(basePlugin, "variantManager", true);
         final TaskManager taskManager = (TaskManager) FieldUtils.readField(variantManager, "taskManager", true);
         List<BaseVariantData<? extends BaseVariantOutputData>> variantDataList = variantManager.getVariantDataList();

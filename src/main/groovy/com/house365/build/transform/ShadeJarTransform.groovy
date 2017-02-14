@@ -15,6 +15,7 @@ import com.android.build.gradle.api.AndroidSourceSet
 import com.android.build.gradle.api.BaseVariant
 import com.android.build.gradle.api.LibraryVariant
 import com.android.build.gradle.internal.api.LibraryVariantImpl
+import com.android.build.gradle.internal.packaging.ParsedPackagingOptions
 import com.android.build.gradle.internal.pipeline.TransformManager
 import com.android.build.gradle.internal.scope.GlobalScope
 import com.android.build.gradle.internal.transforms.JarMerger
@@ -29,7 +30,7 @@ import com.android.utils.FileUtils
 import com.google.common.collect.Lists
 import com.google.common.collect.Sets
 import com.house365.build.ShadeExtension
-import com.house365.build.util.ZipEntryFilter
+import com.house365.build.util.ZipEntryFilterUtil
 import com.tonicsystems.jarjar.PatternElement
 import com.tonicsystems.jarjar.RulesFileParser
 import com.tonicsystems.jarjar.util.StandaloneJarProcessor
@@ -141,10 +142,11 @@ public class ShadeJarTransform extends Transform {
         }
 
         def packagingOptions = variantScope.getGlobalScope().getExtension().getPackagingOptions()
+        def parsedPackagingOptions = new ParsedPackagingOptions(packagingOptions)
         jarMerger(jarFile, inputs, needCombineSet,
-                new ZipEntryFilter.JarWhitoutRFilter(packagingOptions, null))
+                new ZipEntryFilterUtil.JarWhitoutRFilter(parsedPackagingOptions, null))
         jarMerger(rJarFile, inputs, null,
-                new ZipEntryFilter.JarRFilter(packagingOptions, null))
+                new ZipEntryFilterUtil.JarRFilter(parsedPackagingOptions, null))
 
         if (variant instanceof LibraryVariant) {
             File outJar = outputProvider.getContentLocation("combined", getOutputTypes(), getScopes(),
@@ -156,11 +158,11 @@ public class ShadeJarTransform extends Transform {
 
         if (variant instanceof LibraryVariant) {
             LinkedHashSet<File> files = ShadeJarTransform.getNeedCombineJars(project, variantData);
-            ShadeJarTransform.removeCombinedJar(variantData.getVariantConfiguration(), files)
+            ShadeJarTransform.removeCombinedJar(variantData, files)
         }
     }
 
-    private void jarMerger(File jarFile, Collection<TransformInput> inputs, LinkedHashSet<File> needCombineSet, ZipEntryFilter.PackagingFilter filter) {
+    private void jarMerger(File jarFile, Collection<TransformInput> inputs, LinkedHashSet<File> needCombineSet, ZipEntryFilterUtil.PackagingFilter filter) {
         JarMerger jarMerger = new JarMerger(jarFile);
         try {
             jarMerger.setFilter(filter);
@@ -215,7 +217,7 @@ public class ShadeJarTransform extends Transform {
         if (libraries.size() > 0)
             println "Project PackageName:" + appPackageName
         libraries.each {
-            def manifestPackage = VariantConfiguration.getManifestPackage(it.getManifest())
+            def manifestPackage = new DefaultManifestParser(it.getManifest()).getPackage();
             println "Library PackageName:" + manifestPackage
 
             def rule = "rule " + manifestPackage + ".R*  " + appPackageName + ".R@1"
@@ -332,9 +334,9 @@ public class ShadeJarTransform extends Transform {
     public
     static List<LibraryDependency> getNeedCombineAar(LibraryVariantData variantData, Set<File> combinedSet) {
         List<LibraryDependency> combinedLibraries = new ArrayList<>()
-        List<LibraryDependency> mFlatLibraries = variantData.variantConfiguration.getAllLibraries();
-        for (int n = mFlatLibraries.size() - 1; n >= 0; n--) {
-            LibraryDependency dependency = mFlatLibraries.get(n);
+        List<LibraryDependency> libraryDependencies = variantData.variantConfiguration.getCompileAndroidLibraries()
+        for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
+            LibraryDependency dependency = libraryDependencies.get(n);
             if (combinedSet.contains(dependency.getBundle())) {
                 if (dependency instanceof LibraryDependency2) {
                     combinedLibraries.add(dependency.getOriginal())
@@ -377,17 +379,9 @@ public class ShadeJarTransform extends Transform {
      * 从依赖中删除已经合并的jar
      *
      */
-    public static void removeCombinedJar(VariantConfiguration variantConfiguration,
+    public static void removeCombinedJar(BaseVariantData variantData,
                                          Set<File> combinedSet) {
-        Field declaredField
-        try {
-            //2.0.0-beta6 or later
-            declaredField = VariantConfiguration.class.getDeclaredField("mJarDependencies");
-        } catch (NoSuchFieldException e) {
-            declaredField = VariantConfiguration.class.getDeclaredField("mExternalJars");
-        }
-        declaredField.setAccessible(true)
-        Collection<JarDependency> externalJarDependencies = declaredField.get(variantConfiguration)
+        Collection<JarDependency> externalJarDependencies = variantData.getVariantDependency().getCompileDependencies().jarDependencies
         HashSet<JarDependency> set = new HashSet<>();
         for (JarDependency jar : externalJarDependencies) {
             File jarFile = jar.getJarFile();
@@ -398,14 +392,14 @@ public class ShadeJarTransform extends Transform {
                     println("Remove combine jar :" + jarFile)
             }
         }
-        declaredField.set(variantConfiguration, set)
-        List<LibraryDependency> mFlatLibraries = variantConfiguration.getAllLibraries()
-        for (int i = 0; i < mFlatLibraries.size(); i++) {
-            LibraryDependency dependency = mFlatLibraries.get(i)
+        List<LibraryDependency> libraryDependencies = variantData.variantConfiguration.getCompileAndroidLibraries()
+        for (int i = 0; i < libraryDependencies.size(); i++) {
+            LibraryDependency dependency = libraryDependencies.get(i)
             if (combinedSet.contains(dependency.getJarFile())) {
-                mFlatLibraries.remove(dependency)
-                def dependencyImpl2 = new LibraryDependency2(dependency)
-                mFlatLibraries.add(i, dependencyImpl2)
+                dependency.skip();
+//                libraryDependencies.remove(dependency)
+//                def dependencyImpl2 = new LibraryDependency2(dependency)
+//                libraryDependencies.add(i, dependencyImpl2)
                 if (DEBUG)
                     println("Remove combine jar :" + dependency.getJarFile())
             }

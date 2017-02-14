@@ -9,3 +9,4 @@
 */build/**
 */.idea/**
 /buildSrc/repo
+/gradle/wrapper/dists

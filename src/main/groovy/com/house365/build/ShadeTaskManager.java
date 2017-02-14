@@ -23,11 +23,9 @@ import com.android.build.gradle.internal.scope.TaskConfigAction;
 import com.android.build.gradle.internal.scope.VariantOutputScope;
 import com.android.build.gradle.internal.scope.VariantScope;
 import com.android.build.gradle.internal.tasks.FileSupplier;
-import com.android.build.gradle.internal.variant.ApplicationVariantData;
 import com.android.build.gradle.internal.variant.BaseVariantData;
 import com.android.build.gradle.internal.variant.BaseVariantOutputData;
 import com.android.build.gradle.internal.variant.LibraryVariantData;
-import com.android.build.gradle.tasks.CompatibleScreensManifest;
 import com.android.build.gradle.tasks.ManifestProcessorTask;
 import com.android.build.gradle.tasks.MergeResources;
 import com.android.build.gradle.tasks.MergeSourceSetFolders;
@@ -60,10 +58,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.Callable;
 
-import static com.android.build.OutputFile.DENSITY;
 import static com.android.build.gradle.internal.TaskManager.DIR_BUNDLES;
 
 /**
@@ -115,6 +111,7 @@ public class ShadeTaskManager {
 
 
     public void createTasksForVariantData(TaskManager taskManager, LibraryVariantData variantData) throws IllegalAccessException {
+        System.out.println("ShadeTaskManager.createTasksForVariantData");
         final LibraryVariantData libVariantData = (LibraryVariantData) variantData;
         final GradleVariantConfiguration variantConfig = variantData.getVariantConfiguration();
         final CoreBuildType buildType = variantConfig.getBuildType();
@@ -133,11 +130,12 @@ public class ShadeTaskManager {
         LinkedHashSet<File> linkedHashSet = ShadeJarTransform.getNeedCombineFiles(project, variantData);
 
         List<LibraryDependency> libraryDependencies = ShadeJarTransform.getNeedCombineAar(variantData, linkedHashSet);
+        System.out.println(libraryDependencies);
 
         if (libraryDependencies != null && libraryDependencies.size() > 0) {
             // Generate AAR R.java
             for (LibraryDependency dependency : libraryDependencies) {
-                Field field = FieldUtils.getField(dependency.getClass(), "isOptional", true);
+                Field field = FieldUtils.getField(dependency.getClass(), "mIsProvided", true);
                 field.set(dependency, false);
             }
 
@@ -251,38 +249,31 @@ public class ShadeTaskManager {
     public void createMergeLibraryManifestsTask(
             @NonNull TaskFactory tasks,
             @NonNull VariantScope variantScope) {
-        ApplicationVariantData appVariantData =
-                (ApplicationVariantData) variantScope.getVariantData();
-        Set<String> screenSizes = appVariantData.getCompatibleScreens();
+        System.out.println("ShadeTaskManager.createMergeLibraryManifestsTask");
+        LibraryVariantData libraryVariantData =
+                (LibraryVariantData) variantScope.getVariantData();
 
         // loop on all outputs. The only difference will be the name of the task, and location
         // of the generated manifest
-        for (final BaseVariantOutputData vod : appVariantData.getOutputs()) {
+        for (final BaseVariantOutputData vod : libraryVariantData.getOutputs()) {
             VariantOutputScope scope = vod.getScope();
-
-            AndroidTask<CompatibleScreensManifest> csmTask = null;
-            if (vod.getMainOutputFile().getFilter(DENSITY) != null) {
-                csmTask = androidTasks.create(tasks,
-                        new CompatibleScreensManifest.ConfigAction(scope, screenSizes));
-                scope.setCompatibleScreensManifestTask(csmTask);
-            }
 
             List<ManifestMerger2.Invoker.Feature> optionalFeatures = getFeatures(variantScope);
 
-            AndroidTask<? extends ManifestProcessorTask> processManifestTask =
+            AndroidTask<? extends ManifestProcessorTask> processShadeManifestTask =
                     androidTasks.create(tasks, getMergeManifestConfig(scope, optionalFeatures));
-            scope.setManifestProcessorTask(processManifestTask);
 
-            processManifestTask.dependsOn(tasks, variantScope.getPrepareDependenciesTask());
+            processShadeManifestTask.dependsOn(tasks, variantScope.getPrepareDependenciesTask());
 
             if (variantScope.getMicroApkTask() != null) {
-                processManifestTask.dependsOn(tasks, variantScope.getMicroApkTask());
+                processShadeManifestTask.dependsOn(tasks, variantScope.getMicroApkTask());
             }
-
-            if (csmTask != null) {
-                processManifestTask.dependsOn(tasks, csmTask);
+            for (AndroidTask<? extends Task> androidTask : scope.getManifestProcessorTask().getDownstreamTasks()) {
+                androidTask.dependsOn(tasks, processShadeManifestTask);
             }
-
+            libraryVariantData.generateBuildConfigTask.dependsOn(project.getTasks().findByName(processShadeManifestTask.getName()));
+            processShadeManifestTask.dependsOn(tasks, scope.getManifestProcessorTask());
+            scope.setManifestProcessorTask(processShadeManifestTask);
             addManifestArtifact(tasks, scope.getVariantScope().getVariantData());
 
         }
