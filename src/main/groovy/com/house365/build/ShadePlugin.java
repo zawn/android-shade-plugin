@@ -64,6 +64,9 @@ public class ShadePlugin implements Plugin<Project> {
         this.logger = Logging.getLogger(this.getClass());
     }
 
+    /**
+     * 检查当前的Android Gradle Plugin 版本是否与当前的shade版本匹配.
+     */
     private void verifyAndroidPlugin() {
         if (project.getPlugins().hasPlugin(AppPlugin.class)) {
             throw new BadPluginException(

@@ -130,7 +130,11 @@ public class ShadeTaskManager {
         LinkedHashSet<File> linkedHashSet = ShadeJarTransform.getNeedCombineFiles(project, variantData);
 
         List<LibraryDependency> libraryDependencies = ShadeJarTransform.getNeedCombineAar(variantData, linkedHashSet);
-        System.out.println(libraryDependencies);
+        if (DEBUG) {
+            for (LibraryDependency dependency : libraryDependencies) {
+                System.out.println(dependency);
+            }
+        }
 
         if (libraryDependencies != null && libraryDependencies.size() > 0) {
             // Generate AAR R.java
@@ -275,6 +279,7 @@ public class ShadeTaskManager {
             processShadeManifestTask.dependsOn(tasks, scope.getManifestProcessorTask());
             scope.setManifestProcessorTask(processShadeManifestTask);
             addManifestArtifact(tasks, scope.getVariantScope().getVariantData());
+
 
         }
 
