@@ -20,6 +20,7 @@ import com.android.builder.profile.Recorder;
 import com.android.builder.profile.ThreadRecorder;
 import com.google.wireless.android.sdk.stats.AndroidStudioStats.GradleBuildProfileSpan.ExecutionType;
 import com.house365.build.task.ClassPathTask;
+import com.house365.build.transform.ShadeJarToLocalTransform;
 import com.house365.build.transform.ShadeJarTransform;
 import com.house365.build.transform.ShadeJniLibsTransform;
 import org.apache.commons.lang3.reflect.FieldUtils;
@@ -54,6 +55,7 @@ public class ShadePlugin implements Plugin<Project> {
     private TaskFactory tasks;
 
     protected Logger logger;
+    private ShadeJarToLocalTransform shadeJarToLocalTransform;
     private ShadeJarTransform shadeJarTransform;
     private ShadeJniLibsTransform shadeJniLibsTransform;
 
@@ -128,6 +130,8 @@ public class ShadePlugin implements Plugin<Project> {
      */
     private void createTasks() throws IllegalAccessException {
         System.out.println("ShadePlugin.createTasks");
+        shadeJarToLocalTransform = new ShadeJarToLocalTransform(project, baseExtension);
+        baseExtension.registerTransform(shadeJarToLocalTransform);
         shadeJarTransform = new ShadeJarTransform(project, baseExtension);
         baseExtension.registerTransform(shadeJarTransform);
 

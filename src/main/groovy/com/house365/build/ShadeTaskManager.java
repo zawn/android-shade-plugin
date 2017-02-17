@@ -125,11 +125,7 @@ public class ShadeTaskManager {
                 intermediatesDir,
                 StringHelper.toStrings(DIR_BUNDLES, variantDirectorySegments));
 
-
-        // 配置AAR合并.
-        LinkedHashSet<File> linkedHashSet = ShadeJarTransform.getNeedCombineFiles(project, variantData);
-
-        List<LibraryDependency> libraryDependencies = ShadeJarTransform.getNeedCombineAar(variantData, linkedHashSet);
+        List<LibraryDependency> libraryDependencies = ShadeJarTransform.findShadeLibraries(project, variantData);
         if (DEBUG) {
             for (LibraryDependency dependency : libraryDependencies) {
                 System.out.println(dependency);
