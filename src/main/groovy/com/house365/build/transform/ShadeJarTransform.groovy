@@ -22,12 +22,9 @@ import com.android.build.gradle.internal.variant.BaseVariantData
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.core.DefaultManifestParser
 import com.android.builder.dependency.LibraryDependency
-import com.android.builder.dependency.MavenCoordinatesImpl
-import com.android.builder.model.AndroidLibrary
-import com.android.builder.model.MavenCoordinates
 import com.android.utils.FileUtils
-import com.google.common.collect.Lists
 import com.google.common.collect.Sets
+import com.house365.build.ShadeTaskManager
 import com.house365.build.util.ZipEntryFilterUtil
 import com.tonicsystems.jarjar.PatternElement
 import com.tonicsystems.jarjar.RulesFileParser
@@ -55,9 +52,11 @@ public class ShadeJarTransform extends Transform {
     private boolean isLibrary = true;
     private Project project
     private variantScope
+    private ShadeTaskManager shadeTaskManager
 
 
-    public ShadeJarTransform(Project project, BaseExtension LibraryExtension) {
+    public ShadeJarTransform(Project project, BaseExtension LibraryExtension, ShadeTaskManager shadeTaskManager) {
+        this.shadeTaskManager = shadeTaskManager
         this.project = project
         this.libraryExtension = LibraryExtension
         this.logger = Logging.getLogger(ShadeJarTransform.class);
@@ -122,7 +121,7 @@ public class ShadeJarTransform extends Transform {
         this.variant = getCurrentVariantScope(libraryExtension, this, jarFile)
 
 
-        def variantData = null
+        LibraryVariantData variantData = null
         if (variant instanceof LibraryVariant) {
             variantData = variant.getVariantData()
             variantScope = variantData.getScope()
@@ -130,7 +129,7 @@ public class ShadeJarTransform extends Transform {
             if (!isLibrary)
                 throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
         }
-        List<LibraryDependency> libraryDependencies = findShadeLibraries(project, variantData);
+        List<LibraryDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
         LinkedHashSet<File> needCombineJars = new LinkedHashSet<>();
         libraryDependencies.each {
             needCombineJars.add(it.jarFile)
@@ -186,10 +185,10 @@ public class ShadeJarTransform extends Transform {
         }
     }
 
-    def jarjar(BaseVariantData baseVariantData, File jarFile, File outJar) {
+    def jarjar(BaseVariantData variantData, File jarFile, File outJar) {
         StringBuilder stringBuilder = new StringBuilder();
-        String appPackageName = new DefaultManifestParser(baseVariantData.variantConfiguration.getMainManifest()).getPackage();
-        Set<AndroidLibrary> libraries = findShadeLibraries(project, baseVariantData)
+        String appPackageName = new DefaultManifestParser(variantData.variantConfiguration.getMainManifest()).getPackage();
+        List<LibraryDependency> libraries = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
         if (libraries.size() > 0)
             println "Project PackageName:" + appPackageName
         libraries.each {
@@ -236,72 +235,6 @@ public class ShadeJarTransform extends Transform {
         if (DEBUG)
             println "ShadeJarTransform.checkIsParent\n" + child.toString() + "\n" + possibleParent.toString()
         return child.getAbsolutePath().startsWith(possibleParent.getAbsolutePath());
-    }
-
-
-    static List<LibraryDependency> findShadeLibraries(
-            Project project,
-            LibraryVariantData libraryVariantData) {
-        Set<MavenCoordinates> artifacts = ShadeJarToLocalTransform.findVariantShadeDependenciesMavenCoordinates(project, libraryVariantData);
-        List<AndroidLibrary> androidLibraries = libraryVariantData.variantConfiguration.getCompileAndroidLibraries();
-        LinkedList<LibraryDependency> combinedLibraries = new LinkedList();
-        androidLibraries.each { AndroidLibrary library ->
-            def all = artifacts.findAll { MavenCoordinatesImpl coordinates ->
-                coordinates.compareWithoutVersion(library.getResolvedCoordinates())
-            }
-            if (all.size() > 0) {
-                if (library instanceof LibraryDependency2) {
-                    combinedLibraries.add(library.getOriginal())
-                } else {
-                    combinedLibraries.add(library)
-                }
-            }
-        }
-        return combinedLibraries;
-    }
-
-    public static class LibraryDependency2 extends LibraryDependency {
-
-        private LibraryDependency dependency
-
-        LibraryDependency2(LibraryDependency dependencyImpl) {
-            super(
-                    dependencyImpl.getBundle(),
-                    dependencyImpl.getFolder(),
-                    dependencyImpl.dependencies,
-                    dependencyImpl.name,
-                    dependencyImpl.variantName,
-                    dependencyImpl.getProject(),
-                    dependencyImpl.requestedCoordinates,
-                    dependencyImpl.resolvedCoordinates,
-                    dependencyImpl.isOptional
-            )
-            this.dependency = dependencyImpl
-        }
-
-        LibraryDependency getOriginal() {
-            return dependency;
-        }
-
-        @Override
-        File getJarFile() {
-            return new File(this.getJarsRootFolder(), "none");
-        }
-
-        @Override
-        List<File> getLocalJars() {
-            return Lists.newArrayList();
-        }
-
-        @Override
-        boolean isOptional() {
-            return false
-        }
-
-        @Override
-        public String toString() {
-            return super.toString()
-        }
     }
 }
 

@@ -24,6 +24,7 @@ import com.google.common.collect.ImmutableSet
 import com.google.common.collect.Lists
 import com.google.common.io.ByteStreams
 import com.google.common.io.Files
+import com.house365.build.ShadeTaskManager
 import org.gradle.api.Project
 import org.gradle.api.ProjectConfigurationException
 
@@ -48,9 +49,11 @@ public class ShadeJniLibsTransform extends Transform {
     private variantScope
     private static logger = org.slf4j.LoggerFactory.getLogger(ShadeJniLibsTransform.class)
     File jniLibsFolder
+    private ShadeTaskManager shadeTaskManager
 
 
-    public ShadeJniLibsTransform(Project project, BaseExtension LibraryExtension) {
+    public ShadeJniLibsTransform(Project project, BaseExtension LibraryExtension, ShadeTaskManager shadeTaskManager) {
+        this.shadeTaskManager = shadeTaskManager
         this.project = project
         this.libraryExtension = LibraryExtension
     }
@@ -95,7 +98,7 @@ public class ShadeJniLibsTransform extends Transform {
             isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
             if (!isLibrary)
                 throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
-            List<LibraryDependency> libraryDependencies = ShadeJarTransform.findShadeLibraries(project, variant.getVariantData())
+            List<LibraryDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variant.getVariantData().getName())
             for (LibraryDependency dependency : libraryDependencies) {
                 copyFromFolder(dependency.getJniFolder());
             }

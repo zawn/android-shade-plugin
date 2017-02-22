@@ -1,6 +1,5 @@
 package com.house365.build;
 
-import com.android.build.api.transform.Transform;
 import com.android.build.gradle.AppPlugin;
 import com.android.build.gradle.BaseExtension;
 import com.android.build.gradle.BasePlugin;
@@ -10,7 +9,6 @@ import com.android.build.gradle.internal.TaskContainerAdaptor;
 import com.android.build.gradle.internal.TaskFactory;
 import com.android.build.gradle.internal.TaskManager;
 import com.android.build.gradle.internal.VariantManager;
-import com.android.build.gradle.internal.pipeline.TransformManager;
 import com.android.build.gradle.internal.profile.SpanRecorders;
 import com.android.build.gradle.internal.variant.BaseVariantData;
 import com.android.build.gradle.internal.variant.BaseVariantOutputData;
@@ -19,7 +17,6 @@ import com.android.builder.model.Version;
 import com.android.builder.profile.Recorder;
 import com.android.builder.profile.ThreadRecorder;
 import com.google.wireless.android.sdk.stats.AndroidStudioStats.GradleBuildProfileSpan.ExecutionType;
-import com.house365.build.task.ClassPathTask;
 import com.house365.build.transform.ShadeJarToLocalTransform;
 import com.house365.build.transform.ShadeJarTransform;
 import com.house365.build.transform.ShadeJniLibsTransform;
@@ -27,15 +24,12 @@ import org.apache.commons.lang3.reflect.FieldUtils;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.ProjectConfigurationException;
-import org.gradle.api.Task;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry;
 
 import javax.inject.Inject;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.List;
 
 /**
@@ -130,15 +124,17 @@ public class ShadePlugin implements Plugin<Project> {
      */
     private void createTasks() throws IllegalAccessException {
         System.out.println("ShadePlugin.createTasks");
-        shadeJarToLocalTransform = new ShadeJarToLocalTransform(project, baseExtension);
-        baseExtension.registerTransform(shadeJarToLocalTransform);
-        shadeJarTransform = new ShadeJarTransform(project, baseExtension);
-        baseExtension.registerTransform(shadeJarTransform);
-
-        shadeJniLibsTransform = new ShadeJniLibsTransform(project, baseExtension);
-        baseExtension.registerTransform(shadeJniLibsTransform);
 
         shadeTaskManager = new ShadeTaskManager(project, tasks, instantiator, basePlugin, baseExtension);
+
+        shadeJarToLocalTransform = new ShadeJarToLocalTransform(project, baseExtension, shadeTaskManager);
+        baseExtension.registerTransform(shadeJarToLocalTransform);
+        shadeJarTransform = new ShadeJarTransform(project, baseExtension, shadeTaskManager);
+        baseExtension.registerTransform(shadeJarTransform);
+
+        shadeJniLibsTransform = new ShadeJniLibsTransform(project, baseExtension, shadeTaskManager);
+        baseExtension.registerTransform(shadeJniLibsTransform);
+
         project.afterEvaluate(project -> {
             ThreadRecorder.get().record(ExecutionType.BASE_PLUGIN_CREATE_ANDROID_TASKS,
                     project.getPath(), null,
@@ -173,40 +169,12 @@ public class ShadePlugin implements Plugin<Project> {
                         new Recorder.Block<Void>() {
                             @Override
                             public Void call() throws Exception {
-//                                createTasksForVariantData(tasks, variantData);
                                 shadeTaskManager.createTasksForVariantData(taskManager, variantData);
                                 return null;
                             }
                         });
             }
         }
-    }
-
-    public void cleanClassPath(LibraryVariantData variantData) {
-        String prefix = null;
-        try {
-            Method method = TransformManager.class.getDeclaredMethod("getTaskNamePrefix", Transform.class);
-            method.setAccessible(true);
-            prefix = (String) method.invoke(null, shadeJarTransform);
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
-            e.printStackTrace();
-        } catch (NoSuchMethodException e) {
-            e.printStackTrace();
-        }
-        String taskName = variantData.getScope().getTaskName(prefix);
-        // 大写第一个字母
-        String pinyin = String.valueOf(taskName.charAt(0)).toUpperCase().concat(taskName.substring(1));
-        ClassPathTask classPathCleanTask = project.getTasks().create("clean" + pinyin, ClassPathTask.class);
-        classPathCleanTask.setVariantData(variantData);
-        Task task = project.getTasks().findByName(taskName);
-        task.finalizedBy(classPathCleanTask);
-
-        //transformClassesWithShadeJarForRelease
-        //transformResourcesWithMergeJavaResForRelease
-        project.getTasks().findByName(taskName.replace("ShadeJar", "MergeJavaRes").replace("Classes", "Resources")).dependsOn(task);
-
     }
 
 
