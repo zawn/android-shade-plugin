@@ -1,9 +1,10 @@
 package com.house365.build.util;
 
 import com.android.annotations.NonNull;
-import com.android.build.gradle.internal.dsl.PackagingOptions;
+import com.android.build.gradle.internal.packaging.PackagingFileAction;
+import com.android.build.gradle.internal.packaging.ParsedPackagingOptions;
 import com.android.builder.packaging.DuplicateFileException;
-import com.android.builder.signing.SignedJarBuilder;
+import com.android.sdklib.internal.build.SignedJarBuilder;
 import com.google.common.collect.Lists;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
@@ -26,7 +27,7 @@ public class ZipEntryFilter {
 
     public static final class JarWhitoutRFilter extends PackagingFilter {
 
-        public JarWhitoutRFilter(PackagingOptions packagingOptions, SignedJarBuilder.IZipEntryFilter parentFilter) {
+        public JarWhitoutRFilter(ParsedPackagingOptions packagingOptions, SignedJarBuilder.IZipEntryFilter parentFilter) {
             super(packagingOptions, parentFilter);
         }
 
@@ -39,7 +40,7 @@ public class ZipEntryFilter {
 
     public static final class JarRFilter extends PackagingFilter {
 
-        public JarRFilter(PackagingOptions packagingOptions, SignedJarBuilder.IZipEntryFilter parentFilter) {
+        public JarRFilter(ParsedPackagingOptions packagingOptions, SignedJarBuilder.IZipEntryFilter parentFilter) {
             super(packagingOptions, parentFilter);
         }
 
@@ -67,9 +68,9 @@ public class ZipEntryFilter {
         @NonNull
         private SignedJarBuilder.IZipEntryFilter parentFilter;
 
-        private PackagingOptions packagingOptions;
+        private ParsedPackagingOptions packagingOptions;
 
-        public PackagingFilter(PackagingOptions packagingOptions, SignedJarBuilder.IZipEntryFilter parentFilter) {
+        public PackagingFilter(ParsedPackagingOptions packagingOptions, SignedJarBuilder.IZipEntryFilter parentFilter) {
             this.packagingOptions = packagingOptions;
             this.parentFilter = parentFilter;
         }
@@ -90,7 +91,7 @@ public class ZipEntryFilter {
                 return false;
             }
 
-            PackagingOptions.Action action = getPackagingAction(archivePath);
+            PackagingFileAction action = getPackagingAction(archivePath);
             switch (action) {
                 case EXCLUDE:
                     return false;
@@ -112,14 +113,14 @@ public class ZipEntryFilter {
          * Determine the user's intention for a particular archive entry.
          *
          * @param archivePath the archive entry
-         * @return a {@link PackagingOptions.Action} as provided by the user in the build.gradle
+         * @return a {@link PackagingFileAction} as provided by the user in the build.gradle
          */
         @NonNull
-        private PackagingOptions.Action getPackagingAction(@NonNull String archivePath) {
+        private PackagingFileAction getPackagingAction(@NonNull String archivePath) {
             if (packagingOptions != null) {
                 return packagingOptions.getAction(archivePath);
             }
-            return PackagingOptions.Action.NONE;
+            return PackagingFileAction.NONE;
         }
     }
 
@@ -145,7 +146,11 @@ public class ZipEntryFilter {
                 // we just ignore the duplicate, and of course, we don't add it again.
                 File potentialDuplicate = mInputFile;
                 if (!duplicate.getAbsolutePath().equals(mInputFile.getAbsolutePath())) {
-                    throw new DuplicateFileException(archivePath, duplicate, mInputFile);
+                    try {
+                        throw new DuplicateFileException(archivePath, duplicate, mInputFile);
+                    } catch (DuplicateFileException e) {
+                        e.printStackTrace();
+                    }
                 }
                 return false;
             } else {

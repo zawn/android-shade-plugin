@@ -1,5 +1,6 @@
 package com.house365.build;
 
+import com.android.annotations.NonNull;
 import com.android.build.gradle.AndroidGradleOptions;
 import com.android.build.gradle.BaseExtension;
 import com.android.build.gradle.BasePlugin;
@@ -8,31 +9,43 @@ import com.android.build.gradle.internal.SdkHandler;
 import com.android.build.gradle.internal.TaskFactory;
 import com.android.build.gradle.internal.TaskManager;
 import com.android.build.gradle.internal.core.GradleVariantConfiguration;
-import com.android.build.gradle.internal.dependency.ManifestDependencyImpl;
+import com.android.build.gradle.internal.dependency.VariantDependencies;
 import com.android.build.gradle.internal.dsl.BuildType;
 import com.android.build.gradle.internal.dsl.CoreBuildType;
 import com.android.build.gradle.internal.dsl.ProductFlavor;
 import com.android.build.gradle.internal.dsl.SigningConfig;
+import com.android.build.gradle.internal.publishing.ManifestPublishArtifact;
+import com.android.build.gradle.internal.scope.AndroidTask;
 import com.android.build.gradle.internal.scope.AndroidTaskRegistry;
 import com.android.build.gradle.internal.scope.ConventionMappingHelper;
 import com.android.build.gradle.internal.scope.GlobalScope;
+import com.android.build.gradle.internal.scope.TaskConfigAction;
+import com.android.build.gradle.internal.scope.VariantOutputScope;
 import com.android.build.gradle.internal.scope.VariantScope;
+import com.android.build.gradle.internal.tasks.FileSupplier;
+import com.android.build.gradle.internal.variant.ApplicationVariantData;
+import com.android.build.gradle.internal.variant.BaseVariantData;
 import com.android.build.gradle.internal.variant.BaseVariantOutputData;
 import com.android.build.gradle.internal.variant.LibraryVariantData;
+import com.android.build.gradle.tasks.CompatibleScreensManifest;
+import com.android.build.gradle.tasks.ManifestProcessorTask;
 import com.android.build.gradle.tasks.MergeResources;
 import com.android.build.gradle.tasks.MergeSourceSetFolders;
 import com.android.builder.core.AndroidBuilder;
 import com.android.builder.dependency.LibraryDependency;
 import com.android.ide.common.res2.AssetSet;
 import com.android.ide.common.res2.ResourceSet;
+import com.android.manifmerger.ManifestMerger2;
 import com.android.utils.FileUtils;
 import com.android.utils.StringHelper;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import com.house365.build.task.LibraryManifestMergeTask;
+import com.house365.build.gradle.tasks.MergeShaderManifestsConfigAction;
 import com.house365.build.transform.ShadeJarTransform;
 import groovy.lang.GroovyObject;
 import org.apache.commons.lang3.reflect.FieldUtils;
+import org.apache.commons.lang3.reflect.MethodInvokeUtils;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.internal.ConventionMapping;
@@ -42,12 +55,15 @@ import org.gradle.internal.reflect.Instantiator;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Callable;
 
+import static com.android.build.OutputFile.DENSITY;
 import static com.android.build.gradle.internal.TaskManager.DIR_BUNDLES;
 
 /**
@@ -67,6 +83,7 @@ public class ShadeTaskManager {
     private final Collection<SigningConfig> signingConfigs;
     private final boolean isLibrary;
     private final Project project;
+    private final TaskManager taskManager;
     private TaskFactory tasks;
     private final Instantiator instantiator;
 
@@ -84,6 +101,7 @@ public class ShadeTaskManager {
         try {
             this.androidBuilder = (AndroidBuilder) FieldUtils.readField(android, "androidBuilder", true);
             this.sdkHandler = (SdkHandler) FieldUtils.readField(android, "sdkHandler", true);
+            this.taskManager = (TaskManager) FieldUtils.readField(basePlugin, "taskManager", true);
         } catch (IllegalAccessException e) {
             throw e;
         }
@@ -127,7 +145,7 @@ public class ShadeTaskManager {
 
             appendShadeAssetsTask(variantData, libraryDependencies);
 
-            mergerShadeManifestTask(variantData, libraryDependencies);
+            createMergeLibraryManifestsTask(tasks, variantData.getScope());
 
         }
 
@@ -216,16 +234,123 @@ public class ShadeTaskManager {
 
     }
 
-    private void mergerShadeManifestTask(LibraryVariantData variantData, List<LibraryDependency> libraryDependencies) {
+   /* private void mergerShadeManifestTask(LibraryVariantData variantData, List<LibraryDependency> libraryDependencies) {
         VariantScope variantScope = variantData.getScope();
-        // Merge AndroidManifest.xml
-        List<ManifestDependencyImpl> libraries = LibraryManifestMergeTask.getManifestDependencies(libraryDependencies);
-        LibraryManifestMergeTask libManifestMergeTask = project.getTasks().create(variantScope.getTaskName("process", "ShadeManifest"), LibraryManifestMergeTask.class);
-        libManifestMergeTask.variantData = variantData;
-        libManifestMergeTask.libraries = libraries;
         BaseVariantOutputData variantOutputData = variantScope.getVariantData().getOutputs().get(0);
         Task proecssorTask = project.getTasks().findByName(variantOutputData.manifestProcessorTask.getName());
 //          proecssorTask.deleteAllActions()
-        proecssorTask.finalizedBy(libManifestMergeTask);
+//        proecssorTask.finalizedBy(libManifestMergeTask);
+    }*/
+
+    /**
+     * 创建合并Android Manifest文件的Task,参考:{@link TaskManager#createMergeAppManifestsTask(TaskFactory, VariantScope)}
+     *
+     * @param tasks
+     * @param variantScope
+     */
+    public void createMergeLibraryManifestsTask(
+            @NonNull TaskFactory tasks,
+            @NonNull VariantScope variantScope) {
+        ApplicationVariantData appVariantData =
+                (ApplicationVariantData) variantScope.getVariantData();
+        Set<String> screenSizes = appVariantData.getCompatibleScreens();
+
+        // loop on all outputs. The only difference will be the name of the task, and location
+        // of the generated manifest
+        for (final BaseVariantOutputData vod : appVariantData.getOutputs()) {
+            VariantOutputScope scope = vod.getScope();
+
+            AndroidTask<CompatibleScreensManifest> csmTask = null;
+            if (vod.getMainOutputFile().getFilter(DENSITY) != null) {
+                csmTask = androidTasks.create(tasks,
+                        new CompatibleScreensManifest.ConfigAction(scope, screenSizes));
+                scope.setCompatibleScreensManifestTask(csmTask);
+            }
+
+            List<ManifestMerger2.Invoker.Feature> optionalFeatures = getFeatures(variantScope);
+
+            AndroidTask<? extends ManifestProcessorTask> processManifestTask =
+                    androidTasks.create(tasks, getMergeManifestConfig(scope, optionalFeatures));
+            scope.setManifestProcessorTask(processManifestTask);
+
+            processManifestTask.dependsOn(tasks, variantScope.getPrepareDependenciesTask());
+
+            if (variantScope.getMicroApkTask() != null) {
+                processManifestTask.dependsOn(tasks, variantScope.getMicroApkTask());
+            }
+
+            if (csmTask != null) {
+                processManifestTask.dependsOn(tasks, csmTask);
+            }
+
+            addManifestArtifact(tasks, scope.getVariantScope().getVariantData());
+
+        }
+
     }
+
+    /**
+     * 通过反射完成该功能,具体参考{@link TaskManager#createMergeAppManifestsTask(TaskFactory, VariantScope)}.
+     *
+     * @param variantScope
+     * @return
+     */
+    private ImmutableList<ManifestMerger2.Invoker.Feature> getFeatures(@NonNull VariantScope variantScope) {
+        try {
+            Object incrementalMode = MethodInvokeUtils.invokeMethod(taskManager, "getIncrementalMode", variantScope.getVariantConfiguration());
+            return !incrementalMode.toString().equals("NONE")
+                    ? ImmutableList.of(ManifestMerger2.Invoker.Feature.INSTANT_RUN_REPLACEMENT)
+                    : ImmutableList.of();
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+        }
+        return ImmutableList.of();
+    }
+
+    /**
+     * Adds the manifest artifact for the variant.
+     * <p>
+     * This artifact is added if the publishNonDefault option is {@code true}.
+     * See {@link VariantDependencies#compute variant dependencies evaluation} for more details
+     */
+    private void addManifestArtifact(
+            @NonNull TaskFactory tasks,
+            @NonNull BaseVariantData<? extends BaseVariantOutputData> variantData) {
+        if (variantData.getVariantDependency().getManifestConfiguration() != null) {
+            ManifestProcessorTask mergeManifestsTask =
+                    variantData.getOutputs().get(0).getScope().getManifestProcessorTask()
+                            .get(tasks);
+            project.getArtifacts().add(
+                    variantData.getVariantDependency().getManifestConfiguration().getName(),
+                    new ManifestPublishArtifact(
+                            taskManager.getGlobalScope().getProjectBaseName(),
+                            new FileSupplier() {
+                                @NonNull
+                                @Override
+                                public Task getTask() {
+                                    return mergeManifestsTask;
+                                }
+
+                                @Override
+                                public File get() {
+                                    return mergeManifestsTask.getManifestOutputFile();
+                                }
+                            }));
+        }
+    }
+
+    /**
+     * Creates configuration action for the merge manifests task.
+     */
+    @NonNull
+    protected TaskConfigAction<? extends ManifestProcessorTask> getMergeManifestConfig(
+            @NonNull VariantOutputScope scope,
+            @NonNull List<ManifestMerger2.Invoker.Feature> optionalFeatures) {
+        return new MergeShaderManifestsConfigAction(scope, optionalFeatures);
+    }
+
 }

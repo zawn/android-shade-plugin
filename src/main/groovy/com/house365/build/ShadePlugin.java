@@ -16,14 +16,13 @@ import com.android.build.gradle.internal.variant.BaseVariantData;
 import com.android.build.gradle.internal.variant.BaseVariantOutputData;
 import com.android.build.gradle.internal.variant.LibraryVariantData;
 import com.android.builder.model.Version;
-import com.android.builder.profile.ExecutionType;
 import com.android.builder.profile.Recorder;
 import com.android.builder.profile.ThreadRecorder;
+import com.google.wireless.android.sdk.stats.AndroidStudioStats.GradleBuildProfileSpan.ExecutionType;
 import com.house365.build.task.ClassPathTask;
 import com.house365.build.transform.ShadeJarTransform;
 import com.house365.build.transform.ShadeJniLibsTransform;
 import org.apache.commons.lang3.reflect.FieldUtils;
-import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.ProjectConfigurationException;
@@ -95,23 +94,22 @@ public class ShadePlugin implements Plugin<Project> {
         this.tasks = new TaskContainerAdaptor(project.getTasks());
 
         ThreadRecorder.get().record(ExecutionType.BASE_PLUGIN_PROJECT_BASE_EXTENSION_CREATION,
-                new Recorder.Block<Void>() {
+                project.getPath(), null /*variantName*/, new Recorder.Block<Void>() {
                     @Override
                     public Void call() throws Exception {
                         createExtension();
                         return null;
                     }
-                }, new Recorder.Property("project", project.getName()));
-
+                });
 
         ThreadRecorder.get().record(ExecutionType.BASE_PLUGIN_PROJECT_TASKS_CREATION,
-                new Recorder.Block<Void>() {
+                project.getPath(), null /*variantName*/, new Recorder.Block<Void>() {
                     @Override
                     public Void call() throws Exception {
                         createTasks();
                         return null;
                     }
-                }, new Recorder.Property("project", project.getName()));
+                });
     }
 
     /**
@@ -134,19 +132,16 @@ public class ShadePlugin implements Plugin<Project> {
         baseExtension.registerTransform(shadeJniLibsTransform);
 
         shadeTaskManager = new ShadeTaskManager(project, tasks, instantiator, basePlugin, baseExtension);
-        project.afterEvaluate(new Action<Project>() {
-            @Override
-            public void execute(Project project) {
-                ThreadRecorder.get().record(ExecutionType.BASE_PLUGIN_CREATE_ANDROID_TASKS,
-                        new Recorder.Block<Void>() {
-                            @Override
-                            public Void call() throws Exception {
-                                createShadeActionTasks();
-                                return null;
-                            }
-                        },
-                        new Recorder.Property("project", project.getName()));
-            }
+        project.afterEvaluate(project -> {
+            ThreadRecorder.get().record(ExecutionType.BASE_PLUGIN_CREATE_ANDROID_TASKS,
+                    project.getPath(), null,
+                    new Recorder.Block<Void>() {
+                        @Override
+                        public Void call() throws Exception {
+                            createShadeActionTasks();
+                            return null;
+                        }
+                    });
         });
     }
 
@@ -164,17 +159,18 @@ public class ShadePlugin implements Plugin<Project> {
             if (baseVariantData instanceof LibraryVariantData) {
                 final LibraryVariantData variantData = (LibraryVariantData) baseVariantData;
 
-                SpanRecorders.record(project, ExecutionType.VARIANT_MANAGER_CREATE_TASKS_FOR_VARIANT,
+                SpanRecorders.record(
+                        project,
+                        variantData.getName(),
+                        ExecutionType.VARIANT_MANAGER_CREATE_TASKS_FOR_VARIANT,
                         new Recorder.Block<Void>() {
                             @Override
                             public Void call() throws Exception {
-                                cleanClassPath(variantData);
+//                                createTasksForVariantData(tasks, variantData);
                                 shadeTaskManager.createTasksForVariantData(taskManager, variantData);
                                 return null;
                             }
-                        },
-                        new Recorder.Property(SpanRecorders.VARIANT, variantData.getName()));
-
+                        });
             }
         }
     }

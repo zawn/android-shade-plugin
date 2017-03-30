@@ -15,21 +15,20 @@ import com.android.build.gradle.api.AndroidSourceSet
 import com.android.build.gradle.api.BaseVariant
 import com.android.build.gradle.api.LibraryVariant
 import com.android.build.gradle.internal.api.LibraryVariantImpl
-import com.android.build.gradle.internal.dependency.LibraryDependencyImpl
-import com.android.build.gradle.internal.dependency.ManifestDependencyImpl
 import com.android.build.gradle.internal.pipeline.TransformManager
 import com.android.build.gradle.internal.scope.GlobalScope
 import com.android.build.gradle.internal.transforms.JarMerger
 import com.android.build.gradle.internal.variant.BaseVariantData
 import com.android.build.gradle.internal.variant.LibraryVariantData
+import com.android.builder.core.DefaultManifestParser
 import com.android.builder.core.VariantConfiguration
 import com.android.builder.dependency.JarDependency
 import com.android.builder.dependency.LibraryDependency
+import com.android.builder.model.AndroidLibrary
 import com.android.utils.FileUtils
 import com.google.common.collect.Lists
 import com.google.common.collect.Sets
 import com.house365.build.ShadeExtension
-import com.house365.build.task.LibraryManifestMergeTask
 import com.house365.build.util.ZipEntryFilter
 import com.tonicsystems.jarjar.PatternElement
 import com.tonicsystems.jarjar.RulesFileParser
@@ -191,14 +190,28 @@ public class ShadeJarTransform extends Transform {
         }
     }
 
+    @NonNull
+    public static List<AndroidLibrary> getLibraryDependencies(
+            List<? extends AndroidLibrary> libraries) {
+
+        List<AndroidLibrary> list = Lists.newArrayListWithCapacity(libraries.size() * 2);
+
+        for (AndroidLibrary lib : libraries) {
+            // get the dependencies
+            List<AndroidLibrary> children =
+                    getLibraryDependencies(lib.getLibraryDependencies());
+            list.add(lib);
+        }
+        return list;
+    }
+
     def jarjar(BaseVariantData baseVariantData, File jarFile, File outJar) {
         def combineFiles = getNeedCombineFiles(project, baseVariantData);
         List<LibraryDependency> libraryDependencies = getNeedCombineAar(baseVariantData, combineFiles);
 
         StringBuilder stringBuilder = new StringBuilder();
-
-        String appPackageName = VariantConfiguration.getManifestPackage(baseVariantData.variantConfiguration.getMainManifest());
-        List<ManifestDependencyImpl> libraries = LibraryManifestMergeTask.getManifestDependencies(libraryDependencies)
+        String appPackageName = new DefaultManifestParser(baseVariantData.variantConfiguration.getMainManifest()).getPackage();
+        List<AndroidLibrary> libraries = getLibraryDependencies(libraryDependencies)
         if (libraries.size() > 0)
             println "Project PackageName:" + appPackageName
         libraries.each {
@@ -323,7 +336,7 @@ public class ShadeJarTransform extends Transform {
         for (int n = mFlatLibraries.size() - 1; n >= 0; n--) {
             LibraryDependency dependency = mFlatLibraries.get(n);
             if (combinedSet.contains(dependency.getBundle())) {
-                if (dependency instanceof LibraryDependencyImpl2) {
+                if (dependency instanceof LibraryDependency2) {
                     combinedLibraries.add(dependency.getOriginal())
                 } else {
                     combinedLibraries.add(dependency)
@@ -391,7 +404,7 @@ public class ShadeJarTransform extends Transform {
             LibraryDependency dependency = mFlatLibraries.get(i)
             if (combinedSet.contains(dependency.getJarFile())) {
                 mFlatLibraries.remove(dependency)
-                def dependencyImpl2 = new LibraryDependencyImpl2(dependency)
+                def dependencyImpl2 = new LibraryDependency2(dependency)
                 mFlatLibraries.add(i, dependencyImpl2)
                 if (DEBUG)
                     println("Remove combine jar :" + dependency.getJarFile())
@@ -399,11 +412,11 @@ public class ShadeJarTransform extends Transform {
         }
     }
 
-    public static class LibraryDependencyImpl2 extends LibraryDependencyImpl {
+    public static class LibraryDependency2 extends LibraryDependency {
 
-        private LibraryDependencyImpl dependency
+        private LibraryDependency dependency
 
-        LibraryDependencyImpl2(LibraryDependencyImpl dependencyImpl) {
+        LibraryDependency2(LibraryDependency dependencyImpl) {
             super(
                     dependencyImpl.getBundle(),
                     dependencyImpl.getFolder(),
@@ -418,7 +431,7 @@ public class ShadeJarTransform extends Transform {
             this.dependency = dependencyImpl
         }
 
-        LibraryDependencyImpl getOriginal() {
+        LibraryDependency getOriginal() {
             return dependency;
         }
 
