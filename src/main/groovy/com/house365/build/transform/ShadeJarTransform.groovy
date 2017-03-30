@@ -35,6 +35,8 @@ import org.gradle.api.ProjectConfigurationException
 import org.gradle.api.logging.Logger
 import org.gradle.api.logging.Logging
 
+import java.nio.file.Files
+
 import static com.android.utils.FileUtils.deleteIfExists
 import static com.google.common.base.Preconditions.checkNotNull
 
@@ -151,7 +153,9 @@ public class ShadeJarTransform extends Transform {
                     Format.JAR);
             // JarJar
             jarjar(variantData, jarFile, outJar)
-            jarFile.delete()
+            if (jarFile.exists()) {
+                Files.delete(jarFile.toPath())
+            }
         }
     }
 
@@ -210,7 +214,6 @@ public class ShadeJarTransform extends Transform {
         com.android.utils.FileUtils.mkdirs(outputJar.getParentFile());
         deleteIfExists(outputJar);
         outputJar.createNewFile();
-
         DefaultJarProcessor processor = new DefaultJarProcessor();
         RulesFileParser.parse(processor, stringBuilder.toString());
         JarTransformer transformer = new JarTransformer(outputJar, processor);
