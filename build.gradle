@@ -47,8 +47,8 @@ dependencies {
     provided 'com.android.tools.build:gradle:2.2.2'
     //自定义的Android Plugin for Gradle
     //provided 'com.house365.tools.build:gradle:2.0.0-SNAPSHOT'
-    compile gradleApi()
-    compile localGroovy()
+    provided gradleApi()
+    provided localGroovy()
 }
 
 apply from: 'build-config/gradle-push.gradle'
