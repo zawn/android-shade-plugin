@@ -26,12 +26,12 @@ import com.android.utils.FileUtils
 import com.google.common.collect.Sets
 import com.house365.build.ShadeTaskManager
 import com.house365.build.util.ZipEntryFilterUtil
-import com.tonicsystems.jarjar.PatternElement
-import com.tonicsystems.jarjar.RulesFileParser
-import com.tonicsystems.jarjar.util.StandaloneJarProcessor
+import com.tonicsystems.jarjar.classpath.ClassPath
+import com.tonicsystems.jarjar.transform.JarTransformer
+import com.tonicsystems.jarjar.transform.config.RulesFileParser
+import com.tonicsystems.jarjar.transform.jar.DefaultJarProcessor
 import org.gradle.api.Project
 import org.gradle.api.ProjectConfigurationException
-import org.gradle.api.logging.LogLevel
 import org.gradle.api.logging.Logger
 import org.gradle.api.logging.Logging
 
@@ -185,7 +185,15 @@ public class ShadeJarTransform extends Transform {
         }
     }
 
-    def jarjar(BaseVariantData variantData, File jarFile, File outJar) {
+    /**
+     * 重命名被合并的AAR中的R文件引用.
+     *
+     * @param variantData
+     * @param inputJar
+     * @param outputJar
+     * @return
+     */
+    def jarjar(BaseVariantData variantData, File inputJar, File outputJar) {
         StringBuilder stringBuilder = new StringBuilder();
         String appPackageName = new DefaultManifestParser(variantData.variantConfiguration.getMainManifest()).getPackage();
         List<LibraryDependency> libraries = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
@@ -195,20 +203,19 @@ public class ShadeJarTransform extends Transform {
             def manifestPackage = new DefaultManifestParser(it.getManifest()).getPackage();
             println "Library PackageName:" + manifestPackage
 
-            def rule = "rule " + manifestPackage + ".R*  " + appPackageName + ".R@1"
+            def rule = "rule " + manifestPackage + ".R\$*  " + appPackageName + ".R\$@1"
             println "   " + rule
             stringBuilder.append(rule).append("\r\n");
         }
-        List<PatternElement> rules = RulesFileParser.parse(stringBuilder.toString());
-        boolean verbose = logger.isEnabled(LogLevel.INFO);
-        boolean skipManifest = false
-        com.android.utils.FileUtils.mkdirs(outJar.getParentFile());
-        deleteIfExists(outJar);
-        outJar.createNewFile();
-        def constructor = Class.forName("com.tonicsystems.jarjar.MainProcessor").getDeclaredConstructors()[0]
-        constructor.setAccessible(true)
-        def mainProcessor = constructor.newInstance(rules, verbose, skipManifest)
-        StandaloneJarProcessor.run(jarFile, outJar, mainProcessor)
+        com.android.utils.FileUtils.mkdirs(outputJar.getParentFile());
+        deleteIfExists(outputJar);
+        outputJar.createNewFile();
+
+        DefaultJarProcessor processor = new DefaultJarProcessor();
+        RulesFileParser.parse(processor, stringBuilder.toString());
+        JarTransformer transformer = new JarTransformer(outputJar, processor);
+        ClassPath fromClassPath = new ClassPath(project.getRootDir(), Collections.singleton(inputJar));
+        transformer.transform(fromClassPath);
     }
 
     static BaseVariant getCurrentVariantScope(LibraryExtension libraryExtension, Transform transform, File file) {
