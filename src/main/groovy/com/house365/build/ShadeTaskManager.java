@@ -157,6 +157,14 @@ public class ShadeTaskManager {
 
         // 当前Variant需要Shade的AAR依赖.
         List<LibraryDependency> shadeLibraries = findShadeLibraries(mavenCoordinates, variantData);
+
+        List<LibraryDependency2> shadeLibraries2 = shadeLibraries.stream()
+                .map(it -> {
+                    LibraryDependency2 dependency2 = new LibraryDependency2(it);
+                    return dependency2;
+                })
+                .collect(Collectors.toList());
+
         variantShadeLibraries.put(variantData.getName(), shadeLibraries);
         List<JavaLibrary> shadeJars = findShadeJars(mavenCoordinates, variantData);
         variantShadeJars.put(variantData.getName(), shadeJars);
@@ -169,18 +177,13 @@ public class ShadeTaskManager {
 
         // Shade合并Jar及其关联依赖以及Shade的AAR的关联Jar依赖至本地依赖.
         DependencyContainer originalCompileDependencies = variantData.getVariantDependency().getCompileDependencies();
+        DependencyContainer originalPackageDependencies = variantData.getVariantDependency().getPackageDependencies();
 
         List<AndroidLibrary> androidLibraries = new LinkedList<>(originalCompileDependencies.getAndroidDependencies()).stream()
                 .filter(it ->
                         !shadeLibraries.contains(it))
                 .collect(Collectors.toList());
-        List<LibraryDependency2> libraryDependency2s = shadeLibraries.stream()
-                .map(it -> {
-                    LibraryDependency2 dependency2 = new LibraryDependency2(it);
-                    return dependency2;
-                })
-                .collect(Collectors.toList());
-//        androidLibraries.addAll(libraryDependency2s);
+        androidLibraries.addAll(shadeLibraries2);
         List<JavaLibrary> javaLibraries = new LinkedList<>(originalCompileDependencies.getJarDependencies()).stream()
                 .filter(it ->
                         !shadeJars.contains(it))
@@ -198,8 +201,27 @@ public class ShadeTaskManager {
         newLocalJars.addAll(shadeJars);
         // 使用Shade处理后的值替换原有值.
         DependencyContainerImpl compileDependencies = new DependencyContainerImpl(androidLibraries, javaLibraries, newLocalJars);
-        variantData.getVariantDependency().setDependencies(compileDependencies, variantData.getVariantDependency().getPackageDependencies());
-        variantData.getVariantConfiguration().setDependencies(compileDependencies, variantData.getVariantDependency().getPackageDependencies());
+
+        List<AndroidLibrary> packageAndroidLibraries = new ArrayList<>(originalPackageDependencies.getAndroidDependencies());
+        packageAndroidLibraries.addAll(shadeLibraries);
+        List<JavaLibrary> packageLocalJars = new ArrayList<>(originalPackageDependencies.getLocalDependencies());
+        packageLocalJars.addAll(shadeJars);
+
+        DependencyContainerImpl packageDependencies = new DependencyContainerImpl(
+                packageAndroidLibraries,
+                originalPackageDependencies.getJarDependencies(),
+                packageLocalJars);
+        variantData.getVariantDependency().setDependencies(compileDependencies, packageDependencies);
+        variantData.getVariantConfiguration().setDependencies(compileDependencies, packageDependencies);
+        try {
+            String fieldName;
+            fieldName = "mFlatPackageDependencies";
+            fixVariantDependencies(variantData, shadeLibraries, shadeJars, fieldName);
+            fieldName = "mFlatCompileDependencies";
+            fixVariantDependencies(variantData, shadeLibraries, shadeJars, fieldName);
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
 
         if (shadeLibraries != null && shadeLibraries.size() > 0) {
             // Generate AAR R.java
@@ -214,6 +236,30 @@ public class ShadeTaskManager {
 
             createMergeLibraryManifestsTask(tasks, variantData.getScope());
         }
+    }
+
+    private void fixVariantDependencies(LibraryVariantData variantData, List<LibraryDependency> shadeLibraries, List<JavaLibrary> shadeJars, String fieldName) throws IllegalAccessException {
+        Field field = FieldUtils.getField(variantData.getVariantConfiguration().getClass(), fieldName, true);
+        DependencyContainer mFlatPackageDependencies = (DependencyContainer) field.get(variantData.getVariantConfiguration());
+        List<JavaLibrary> flatJavaLibraries = new LinkedList<>(mFlatPackageDependencies.getJarDependencies()).stream()
+                .filter(it ->
+                        !shadeJars.contains(it))
+                .collect(Collectors.toList());
+        Field mJavaDependencies = FieldUtils.getField(mFlatPackageDependencies.getClass(), "mJavaDependencies", true);
+        mJavaDependencies.set(mFlatPackageDependencies, ImmutableList.copyOf(flatJavaLibraries));
+
+        List<AndroidLibrary> androidLibraries = new LinkedList<>(mFlatPackageDependencies.getAndroidDependencies()).stream()
+                .map(it -> (LibraryDependency) it)
+                .map(it -> {
+                    if (!shadeLibraries.contains(it)) {
+                        return it;
+                    } else {
+                        LibraryDependency2 dependency2 = new LibraryDependency2(it);
+                        return dependency2;
+                    }
+                }).collect(Collectors.toList());
+        Field mLibraryDependencies = FieldUtils.getField(mFlatPackageDependencies.getClass(), "mLibraryDependencies", true);
+        mLibraryDependencies.set(mFlatPackageDependencies, ImmutableList.copyOf(androidLibraries));
     }
 
     /**
