@@ -123,7 +123,6 @@ public class ShadePlugin implements Plugin<Project> {
      * 创建相关任务.
      */
     private void createTasks() throws IllegalAccessException {
-        System.out.println("ShadePlugin.createTasks");
 
         shadeTaskManager = new ShadeTaskManager(project, tasks, instantiator, basePlugin, baseExtension);
 
@@ -154,7 +153,6 @@ public class ShadePlugin implements Plugin<Project> {
      * @throws IllegalAccessException
      */
     public void createShadeActionTasks() throws IllegalAccessException {
-        System.out.println("ShadePlugin.createShadeActionTasks");
         final VariantManager variantManager = (VariantManager) FieldUtils.readField(basePlugin, "variantManager", true);
         final TaskManager taskManager = (TaskManager) FieldUtils.readField(variantManager, "taskManager", true);
         List<BaseVariantData<? extends BaseVariantOutputData>> variantDataList = variantManager.getVariantDataList();
