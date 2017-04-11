@@ -34,9 +34,11 @@ sourceSets {
 
 tasks.withType(JavaCompile) {
     options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+    options.encoding = "UTF-8"
 }
 tasks.withType(GroovyCompile) {
     options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+    options.encoding = "UTF-8"
 }
 
 dependencies {
