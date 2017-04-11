@@ -66,18 +66,12 @@ class ShadeJarToLocalTransform extends Transform {
         return Sets.immutableEnumSet(Scope.PROJECT_LOCAL_DEPS);
     }
 
-
     @Override
-    void transform(
-            @NonNull Context context,
-            @NonNull Collection<TransformInput> inputs,
-            @NonNull Collection<TransformInput> referencedStreams,
-            @Nullable TransformOutputProvider outputProvider,
-            boolean isIncremental) throws TransformException, IOException {
-        checkNotNull(outputProvider, "Missing output object for transform " + getName());
-
+    void transform(TransformInvocation invocation) throws TransformException, InterruptedException, IOException {
+        @Nullable TransformOutputProvider outputProvider = invocation.getOutputProvider()
+        checkNotNull(outputProvider, "Missing output object for transform " + getName())
         if (DEBUG)
-            for (TransformInput input : inputs) {
+            for (TransformInput input : invocation.getInputs()) {
                 for (JarInput jarInput : input.getJarInputs()) {
                     println jarInput.getFile()
                 }
@@ -86,12 +80,10 @@ class ShadeJarToLocalTransform extends Transform {
                     println directoryInput.getFile();
                 }
             }
-        // 用于确定当前variant,无实际使用.
         File jarFile = outputProvider.getContentLocation("combined-temp", getOutputTypes(), getScopes(),
-                Format.JAR);
-        FileUtils.mkdirs(jarFile.getParentFile());
+                Format.JAR)
+        FileUtils.mkdirs(jarFile.getParentFile())
         this.variant = ShadeJarTransform.getCurrentVariantScope(libraryExtension, this, jarFile)
-
         LibraryVariantData variantData
         if (variant instanceof LibraryVariantImpl) {
             variantData = variant.getVariantData()
@@ -100,12 +92,11 @@ class ShadeJarToLocalTransform extends Transform {
             if (!isLibrary)
                 throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
         }
-
         shadeTaskManager.getVariantShadeJars(variantData.getName()).each {
             File distJarFile = outputProvider.getContentLocation(FilenameUtils.getBaseName(it.getClasspathFile().getName()), getOutputTypes(), getScopes(),
                     Format.JAR);
             FileUtils.copyFile(it.getClasspathFile(), distJarFile)
-        }
+        };
     }
 }
 

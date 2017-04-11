@@ -81,16 +81,12 @@ public class ShadeJniLibsTransform extends Transform {
         return TransformManager.SCOPE_FULL_LIBRARY;
     }
 
-
-    @Override
-    public void transform(
-            @NonNull Context context,
-            @NonNull Collection<TransformInput> inputs,
-            @NonNull Collection<TransformInput> referencedStreams,
-            @Nullable TransformOutputProvider outputProvider,
-            boolean isIncremental) throws TransformException, IOException {
-        checkNotNull(outputProvider, "Missing output object for transform " + getName());
-
+    public void transform(@NonNull TransformInvocation invocation)
+            throws TransformException, InterruptedException, IOException {
+        // Just delegate to old method, for code that uses the old API.
+        //noinspection deprecation
+        @Nullable TransformOutputProvider outputProvider = invocation.getOutputProvider()
+        checkNotNull(outputProvider, "Missing output object for transform " + getName())
         jniLibsFolder = outputProvider.getContentLocation("main/lib", getOutputTypes(), getScopes(), Format.DIRECTORY)
         this.variant = ShadeJarTransform.getCurrentVariantScope(libraryExtension, this, jniLibsFolder)
         if (variant instanceof LibraryVariant) {
@@ -103,7 +99,7 @@ public class ShadeJniLibsTransform extends Transform {
                 copyFromFolder(dependency.getJniFolder());
             }
         }
-        for (TransformInput input : inputs) {
+        for (TransformInput input : invocation.getInputs()) {
             for (JarInput jarInput : input.getJarInputs()) {
                 copyFromJar(jarInput.getFile());
             }
@@ -111,8 +107,9 @@ public class ShadeJniLibsTransform extends Transform {
             for (DirectoryInput directoryInput : input.getDirectoryInputs()) {
                 copyFromFolder(directoryInput.getFile());
             }
-        }
+        };
     }
+
 
     private void copyFromJar(@NonNull File jarFile) throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();

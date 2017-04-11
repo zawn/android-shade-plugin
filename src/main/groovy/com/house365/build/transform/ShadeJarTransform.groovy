@@ -90,25 +90,17 @@ public class ShadeJarTransform extends Transform {
         return TransformManager.SCOPE_FULL_PROJECT;
     }
 
-
-    @Override
-    public void transform(
-            @NonNull Context context,
-            @NonNull Collection<TransformInput> inputs,
-            @NonNull Collection<TransformInput> referencedStreams,
-            @Nullable TransformOutputProvider outputProvider,
-            boolean isIncremental) throws TransformException, IOException {
-        checkNotNull(outputProvider, "Missing output object for transform " + getName());
-
-        // all the output will be the same since the transform type is COMBINED.
-        // and format is SINGLE_JAR so output is a jar
+    public void transform(@NonNull TransformInvocation invocation)
+            throws TransformException, InterruptedException, IOException {
+        @Nullable TransformOutputProvider outputProvider = invocation.getOutputProvider()
+        @NonNull Collection<TransformInput> inputs = invocation.getInputs()
+        checkNotNull(outputProvider, "Missing output object for transform " + getName())
         File jarFile = outputProvider.getContentLocation("combined-temp", getOutputTypes(), getScopes(),
-                Format.JAR);
+                Format.JAR)
         File rJarFile = outputProvider.getContentLocation("r", getOutputTypes(), getScopes(),
-                Format.JAR);
-        FileUtils.mkdirs(jarFile.getParentFile());
-        deleteIfExists(jarFile);
-
+                Format.JAR)
+        FileUtils.mkdirs(jarFile.getParentFile())
+        deleteIfExists(jarFile)
         if (DEBUG)
             for (TransformInput input : inputs) {
                 for (JarInput jarInput : input.getJarInputs()) {
@@ -119,10 +111,7 @@ public class ShadeJarTransform extends Transform {
                     println directoryInput.getFile();
                 }
             }
-
         this.variant = getCurrentVariantScope(libraryExtension, this, jarFile)
-
-
         LibraryVariantData variantData = null
         if (variant instanceof LibraryVariant) {
             variantData = variant.getVariantData()
@@ -132,22 +121,19 @@ public class ShadeJarTransform extends Transform {
                 throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
         }
         List<AndroidDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
-        LinkedHashSet<File> needCombineJars = new LinkedHashSet<>();
+        LinkedHashSet<File> needCombineJars = new LinkedHashSet<>()
         libraryDependencies.each {
             needCombineJars.add(it.jarFile)
 //            it.skip()
             if (DEBUG)
                 println("Remove combine jar :" + it.getJarFile())
         }
-
-
         def packagingOptions = variantScope.getGlobalScope().getExtension().getPackagingOptions()
         def parsedPackagingOptions = new ParsedPackagingOptions(packagingOptions)
         jarMerger(jarFile, inputs, needCombineJars,
                 new ZipEntryFilterUtil.JarWhitoutRFilter(parsedPackagingOptions, null))
         jarMerger(rJarFile, inputs, null,
                 new ZipEntryFilterUtil.JarRFilter(parsedPackagingOptions, null))
-
         if (variant instanceof LibraryVariant) {
             File outJar = outputProvider.getContentLocation("combined", getOutputTypes(), getScopes(),
                     Format.JAR);
@@ -156,8 +142,9 @@ public class ShadeJarTransform extends Transform {
             if (jarFile.exists()) {
                 Files.delete(jarFile.toPath())
             }
-        }
+        };
     }
+
 
     private void jarMerger(File jarFile, Collection<TransformInput> inputs, LinkedHashSet<File> needCombineJars, ZipEntryFilterUtil.PackagingFilter filter) {
         JarMerger jarMerger = new JarMerger(jarFile);
