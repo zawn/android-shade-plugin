@@ -88,7 +88,7 @@ public class ShadeJniLibsTransform extends Transform {
         @Nullable TransformOutputProvider outputProvider = invocation.getOutputProvider()
         checkNotNull(outputProvider, "Missing output object for transform " + getName())
         jniLibsFolder = outputProvider.getContentLocation("main/lib", getOutputTypes(), getScopes(), Format.DIRECTORY)
-        this.variant = ShadeJarTransform.getCurrentVariantScope(libraryExtension, this, jniLibsFolder)
+        this.variant = ShadeAarClassTransform.getCurrentVariantScope(libraryExtension, this, jniLibsFolder)
         if (variant instanceof LibraryVariant) {
             variantScope = variant.variantData.getScope()
             isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;

@@ -46,7 +46,7 @@ import static com.google.common.base.Preconditions.checkNotNull
  * <p/>
  * This only packages the class files. It ignores other files.
  */
-public class ShadeJarTransform extends Transform {
+public class ShadeAarClassTransform extends Transform {
     public static final boolean DEBUG = false;
     private final Logger logger;
     private BaseVariant variant
@@ -57,11 +57,11 @@ public class ShadeJarTransform extends Transform {
     private ShadeTaskManager shadeTaskManager
 
 
-    public ShadeJarTransform(Project project, BaseExtension LibraryExtension, ShadeTaskManager shadeTaskManager) {
+    public ShadeAarClassTransform(Project project, BaseExtension LibraryExtension, ShadeTaskManager shadeTaskManager) {
         this.shadeTaskManager = shadeTaskManager
         this.project = project
         this.libraryExtension = LibraryExtension
-        this.logger = Logging.getLogger(ShadeJarTransform.class);
+        this.logger = Logging.getLogger(ShadeAarClassTransform.class);
     }
 
     @NonNull
@@ -230,7 +230,7 @@ public class ShadeJarTransform extends Transform {
 
     static boolean checkIsParent(File child, File possibleParent) {
         if (DEBUG)
-            println "ShadeJarTransform.checkIsParent\n" + child.toString() + "\n" + possibleParent.toString()
+            println "ShadeAarClassTransform.checkIsParent\n" + child.toString() + "\n" + possibleParent.toString()
         return child.getAbsolutePath().startsWith(possibleParent.getAbsolutePath());
     }
 }

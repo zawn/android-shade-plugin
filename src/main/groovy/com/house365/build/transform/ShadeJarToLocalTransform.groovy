@@ -83,7 +83,7 @@ class ShadeJarToLocalTransform extends Transform {
         File jarFile = outputProvider.getContentLocation("combined-temp", getOutputTypes(), getScopes(),
                 Format.JAR)
         FileUtils.mkdirs(jarFile.getParentFile())
-        this.variant = ShadeJarTransform.getCurrentVariantScope(libraryExtension, this, jarFile)
+        this.variant = ShadeAarClassTransform.getCurrentVariantScope(libraryExtension, this, jarFile)
         LibraryVariantData variantData
         if (variant instanceof LibraryVariantImpl) {
             variantData = variant.getVariantData()
