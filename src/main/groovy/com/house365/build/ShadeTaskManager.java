@@ -198,6 +198,7 @@ public class ShadeTaskManager {
 
         try {
             Field dataMapField = FieldUtils.getField(originalCompileGraph.getMutableDependencyDataMap().getClass(), "dataMap", true);
+            @SuppressWarnings("unchecked")
             Map<com.android.builder.dependency.level2.Dependency, DependencyMutableData> dataMap = (Map<com.android.builder.dependency.level2.Dependency, DependencyMutableData>) dataMapField.get(originalCompileGraph.getMutableDependencyDataMap());
             shadeAllDependencies.stream().forEach(library -> {
                         DependencyMutableData dependencyMutableData = dataMap.computeIfAbsent(library, k -> new DependencyMutableData());
@@ -252,6 +253,7 @@ public class ShadeTaskManager {
      */
     private Transform getProguardTransform(VariantScope variantScope) throws IllegalAccessException {
         Field transformsField = FieldUtils.getField(variantScope.getTransformManager().getClass(), "transforms", true);
+        @SuppressWarnings("unchecked")
         List<Transform> transforms = (List<Transform>) transformsField.get(variantScope.getTransformManager());
         return transforms.stream().filter(it -> it.getClass().equals(ProGuardTransform.class)).findFirst().orElse(null);
     }
@@ -450,7 +452,7 @@ public class ShadeTaskManager {
             Set<MavenCoordinates> mavenCoordinates) {
         ImmutableList<com.android.builder.dependency.level2.Dependency> allDependencies = libraryVariantData.getVariantConfiguration().getCompileDependencies().getAllDependencies();
 
-        LinkedList<com.android.builder.dependency.level2.Dependency> shadeAndroidDependencies = new LinkedList();
+        LinkedList<com.android.builder.dependency.level2.Dependency> shadeAndroidDependencies = new LinkedList<>();
         for (com.android.builder.dependency.level2.Dependency androidDependency : allDependencies) {
             List<MavenCoordinatesImpl> collect = mavenCoordinates.stream()
                     .map(it ->
