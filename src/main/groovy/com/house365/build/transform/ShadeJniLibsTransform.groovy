@@ -17,7 +17,7 @@ import com.android.build.gradle.api.LibraryVariant
 import com.android.build.gradle.internal.pipeline.ExtendedContentType
 import com.android.build.gradle.internal.pipeline.TransformManager
 import com.android.build.gradle.internal.variant.LibraryVariantData
-import com.android.builder.dependency.LibraryDependency
+import com.android.builder.dependency.level2.AndroidDependency
 import com.android.utils.FileUtils
 import com.google.common.base.Joiner
 import com.google.common.collect.ImmutableSet
@@ -98,8 +98,8 @@ public class ShadeJniLibsTransform extends Transform {
             isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
             if (!isLibrary)
                 throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
-            List<LibraryDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variant.getVariantData().getName())
-            for (LibraryDependency dependency : libraryDependencies) {
+            List<AndroidDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variant.getVariantData().getName())
+            for (AndroidDependency dependency : libraryDependencies) {
                 copyFromFolder(dependency.getJniFolder());
             }
         }

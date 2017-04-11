@@ -33,9 +33,9 @@ import com.android.build.gradle.tasks.ManifestProcessorTask;
 import com.android.build.gradle.tasks.MergeResources;
 import com.android.build.gradle.tasks.MergeSourceSetFolders;
 import com.android.builder.core.AndroidBuilder;
+import com.android.builder.dependency.DependencyMutableData;
 import com.android.builder.dependency.MavenCoordinatesImpl;
 import com.android.builder.dependency.level2.AndroidDependency;
-import com.android.builder.dependency.level2.DependencyContainer;
 import com.android.builder.dependency.level2.JavaDependency;
 import com.android.builder.model.MavenCoordinates;
 import com.android.builder.model.SourceProvider;
@@ -161,66 +161,64 @@ public class ShadeTaskManager {
         Set<MavenCoordinates> mavenCoordinates = findVariantShadeDependenciesMavenCoordinates(project, variantData);
 
         // 当前Variant需要Shade的AAR依赖.
-        List<AndroidDependency> shadeLibraries = findShadeLibraries(mavenCoordinates, variantData);
-        variantShadeLibraries.put(variantData.getName(), shadeLibraries);
-        List<JavaDependency> shadeJars = findShadeJars(mavenCoordinates, variantData);
-        variantShadeJars.put(variantData.getName(), shadeJars);
+        LinkedList<com.android.builder.dependency.level2.Dependency> shadeAllDependencies = transformMavenCoordinatesToDependency(variantData, mavenCoordinates);
+        List<AndroidDependency> shadeAndroidDependencies = shadeAllDependencies.stream()
+                .filter(it -> it instanceof AndroidDependency)
+                .map(it -> (AndroidDependency) it)
+                .collect(Collectors.toList());
+        List<JavaDependency> shadeJavaDependencies = shadeAllDependencies.stream()
+                .filter(it -> it instanceof JavaDependency)
+                .map(it -> (JavaDependency) it)
+                .collect(Collectors.toList());
+
+        variantShadeLibraries.put(variantData.getName(), shadeAndroidDependencies);
+        variantShadeJars.put(variantData.getName(), shadeJavaDependencies);
 
         if (DEBUG) {
-            for (AndroidDependency dependency : shadeLibraries) {
+            for (AndroidDependency dependency : shadeAndroidDependencies) {
                 System.out.println(dependency);
             }
         }
 
         // Shade合并Jar及其关联依赖以及Shade的AAR的关联Jar依赖至本地依赖.
-        DependencyContainer originalCompileDependencies = variantData.getVariantDependency().getCompileDependencies();
-        DependencyContainer originalPackageDependencies = variantData.getVariantDependency().getPackageDependencies();
-
-        List<AndroidDependency> androidLibraries = new LinkedList<>(originalCompileDependencies.getDirectAndroidDependencies()).stream()
-                .filter(it ->
-                        !shadeLibraries.contains(it))
-                .collect(Collectors.toList());
-//        加入需要Shade的AAR依赖.
-//        androidLibraries.addAll(shadeLibraries2.values());
-        List<JavaDependency> javaLibraries = new LinkedList<>(originalCompileDependencies.getDirectJavaDependencies()).stream()
-                .filter(it ->
-                        !shadeJars.contains(it))
-                .collect(Collectors.toList());
-        shadeJars.stream().forEach(it -> {
-            try {
-                Field field = FieldUtils.getField(it.getClass(), "mIsProvided", true);
-                field.set(it, false);
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-            }
-        });
-        LinkedList<JavaDependency> newLocalJars = new LinkedList<>(originalCompileDependencies.getDirectLocalJavaDependencies());
-        newLocalJars.addAll(shadeJars);
-        // 使用Shade处理后的值替换原有值.
         DependencyGraph originalCompileGraph = (DependencyGraph) MethodInvokeUtils.invokeMethod(variantData.getVariantDependency(), "getCompileGraph");
+        DependencyGraph originalPackageGraph = (DependencyGraph) MethodInvokeUtils.invokeMethod(variantData.getVariantDependency(), "getPackageGraph");
+        Field isLocal = FieldUtils.getDeclaredField(JavaDependency.class, "isLocal", true);
+        originalCompileGraph.getDependencyMap().entrySet().stream()
+                .filter(it -> mavenCoordinates.contains(it.getKey()))
+                .filter(it -> it.getValue() instanceof JavaDependency)
+                .map(it -> (JavaDependency) it.getValue())
+                .forEach(it -> {
+                    try {
+                        isLocal.setBoolean(it, true);
+                    } catch (IllegalAccessException e) {
+                        e.printStackTrace();
+                    }
+                });
 
+        try {
+            Field dataMapField = FieldUtils.getField(originalCompileGraph.getMutableDependencyDataMap().getClass(), "dataMap", true);
+            Map<com.android.builder.dependency.level2.Dependency, DependencyMutableData> dataMap = (Map<com.android.builder.dependency.level2.Dependency, DependencyMutableData>) dataMapField.get(originalCompileGraph.getMutableDependencyDataMap());
+            shadeAllDependencies.stream().forEach(library -> {
+                        DependencyMutableData dependencyMutableData = dataMap.computeIfAbsent(library, k -> new DependencyMutableData());
+                        dependencyMutableData.setProvided(false);
+                    }
+            );
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
 
         DependencyGraph compileGraph = new DependencyGraph(originalCompileGraph.getDependencyMap(), originalCompileGraph.getDependencies(), originalCompileGraph.getMutableDependencyDataMap());
-
-        List<AndroidDependency> packageAndroidLibraries = new ArrayList<>(originalPackageDependencies.getDirectAndroidDependencies());
-        packageAndroidLibraries.addAll(shadeLibraries);
-        List<JavaDependency> packageLocalJars = new ArrayList<>(originalPackageDependencies.getDirectLocalJavaDependencies());
-        packageLocalJars.addAll(shadeJars);
-
-        DependencyGraph originalPackageGraph = (DependencyGraph) MethodInvokeUtils.invokeMethod(variantData.getVariantDependency(), "getPackageGraph");
         DependencyGraph packageGraph = new DependencyGraph(originalPackageGraph.getDependencyMap(), originalPackageGraph.getDependencies(), originalPackageGraph.getMutableDependencyDataMap());
-
+        // 使用Shade处理后的值替换原有值.
         variantData.getVariantDependency().setDependencies(compileGraph, packageGraph, true);
         variantData.getVariantConfiguration().setResolvedDependencies(
                 variantData.getVariantDependency().getCompileDependencies(),
                 variantData.getVariantDependency().getPackageDependencies());
 
-        Field transformsField = FieldUtils.getField(variantScope.getTransformManager().getClass(), "transforms", true);
-        List<Transform> transforms = (List<Transform>) transformsField.get(variantScope.getTransformManager());
-        Transform proguardTransform = transforms.stream().filter(it -> it.getClass().equals(ProGuardTransform.class)).findFirst().orElse(null);
+        Transform proguardTransform = getProguardTransform(variantScope);
         if (proguardTransform != null) {
-            String taskNamePrefix = (String) MethodInvokeUtils.invokeStaticMethod(variantScope.getTransformManager().getClass(), "getTaskNamePrefix", proguardTransform);
-            String taskName = variantScope.getTaskName(taskNamePrefix);
+            String taskName = getTransformTaskName(variantScope, proguardTransform);
             Task task = project.getTasks().findByName(taskName);
             task.doFirst(new Action<Task>() {
                 @Override
@@ -230,19 +228,32 @@ public class ShadeTaskManager {
             });
         }
 
-        if (shadeLibraries != null && shadeLibraries.size() > 0) {
-            // Generate AAR R.java
-            for (AndroidDependency dependency : shadeLibraries) {
-                Field field = FieldUtils.getField(dependency.getClass(), "mIsProvided", true);
-                field.set(dependency, false);
-            }
+        if (shadeAndroidDependencies != null && shadeAndroidDependencies.size() > 0) {
 
-            appendShadeResourcesTask(variantData, shadeLibraries);
+            appendShadeResourcesTask(variantData, shadeAndroidDependencies);
 
-            appendShadeAssetsTask(variantData, shadeLibraries);
+            appendShadeAssetsTask(variantData, shadeAndroidDependencies);
 
             createMergeLibraryManifestsTask(tasks, variantData.getScope());
         }
+    }
+
+    private String getTransformTaskName(VariantScope variantScope, Transform proguardTransform) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+        String taskNamePrefix = (String) MethodInvokeUtils.invokeStaticMethod(variantScope.getTransformManager().getClass(), "getTaskNamePrefix", proguardTransform);
+        return variantScope.getTaskName(taskNamePrefix);
+    }
+
+    /**
+     * 获取Proguard实例.
+     *
+     * @param variantScope
+     * @return
+     * @throws IllegalAccessException
+     */
+    private Transform getProguardTransform(VariantScope variantScope) throws IllegalAccessException {
+        Field transformsField = FieldUtils.getField(variantScope.getTransformManager().getClass(), "transforms", true);
+        List<Transform> transforms = (List<Transform>) transformsField.get(variantScope.getTransformManager());
+        return transforms.stream().filter(it -> it.getClass().equals(ProGuardTransform.class)).findFirst().orElse(null);
     }
 
     /**
@@ -428,139 +439,30 @@ public class ShadeTaskManager {
     }
 
     /**
-     * 从mavenCoordinates中查找当前variant需要shade的所有aar.
+     * 将{@link MavenCoordinates}类型的依赖转换为{@link com.android.builder.dependency.level2.Dependency}
      *
-     * @param mavenCoordinates
      * @param libraryVariantData
+     * @param mavenCoordinates   所有需要Shade的依赖
      * @return
      */
-    private static List<AndroidDependency> findShadeLibraries(
-            Set<MavenCoordinates> mavenCoordinates,
-            LibraryVariantData libraryVariantData) {
-        List<AndroidDependency> androidLibraries = libraryVariantData.getVariantConfiguration().getCompileDependencies().getDirectAndroidDependencies();
-        LinkedList<AndroidDependency> combinedLibraries = new LinkedList();
-        for (AndroidDependency library : androidLibraries) {
+    private static LinkedList<com.android.builder.dependency.level2.Dependency> transformMavenCoordinatesToDependency(
+            LibraryVariantData libraryVariantData,
+            Set<MavenCoordinates> mavenCoordinates) {
+        ImmutableList<com.android.builder.dependency.level2.Dependency> allDependencies = libraryVariantData.getVariantConfiguration().getCompileDependencies().getAllDependencies();
+
+        LinkedList<com.android.builder.dependency.level2.Dependency> shadeAndroidDependencies = new LinkedList();
+        for (com.android.builder.dependency.level2.Dependency androidDependency : allDependencies) {
             List<MavenCoordinatesImpl> collect = mavenCoordinates.stream()
-                    .map(it ->
-                            (MavenCoordinatesImpl) it)
-                    .filter(it ->
-                            it.compareWithoutVersion(library.getCoordinates()))
-                    .collect(Collectors.toList());
-            if (collect.size() > 0) {
-                if (library instanceof AndroidDependency2) {
-                    combinedLibraries.add(((AndroidDependency2) library).getOriginal());
-                } else if (library instanceof AndroidDependency) {
-                    combinedLibraries.add((AndroidDependency) library);
-                } else {
-                    System.out.println("error type " + library);
-                }
-            }
-        }
-        return combinedLibraries;
-    }
-
-
-    /**
-     * 从mavenCoordinates中查找当前variant需要shade的所有jars(包含直接/间接以及AAR依赖的jar).
-     *
-     * @param mavenCoordinates
-     * @param variantData
-     * @return
-     */
-    private static List<JavaDependency> findShadeJars(
-            Set<MavenCoordinates> mavenCoordinates,
-            LibraryVariantData variantData) {
-        // Shade合并Jar及其关联依赖以及Shade的AAR的关联Jar依赖至本地依赖.
-        DependencyContainer originalCompileDependencies = variantData.getVariantDependency().getCompileDependencies();
-        LinkedList<AndroidDependency> newLibraryDependencies = new LinkedList<>(originalCompileDependencies.getDirectAndroidDependencies());
-        LinkedList<JavaDependency> newJavaDependencies = new LinkedList<>(originalCompileDependencies.getDirectJavaDependencies());
-
-        List<JavaDependency> javaJars = flatNeedShadeJavaDependencies(mavenCoordinates, newJavaDependencies);
-        List<JavaDependency> libraryJars = flatNeedShadeLibraryDependencies(mavenCoordinates, newLibraryDependencies);
-        List<JavaDependency> arrayList = new ArrayList(javaJars);
-        arrayList.addAll(libraryJars);
-        return arrayList;
-    }
-
-
-    /**
-     * 将newJavaDependencies中需要Shade的Jar依赖(包含其本地依赖以及Maven依赖以及关联依赖)提取出来并返回.
-     *
-     * @param mavenCoordinates
-     * @param newJavaDependencies
-     */
-    private static List<JavaDependency> flatNeedShadeJavaDependencies(
-            Set<MavenCoordinates> mavenCoordinates,
-            LinkedList<? extends JavaDependency> newJavaDependencies) {
-        List<JavaDependency> shadeJars = new ArrayList<>();
-        for (int i = 0; i < newJavaDependencies.size(); i++) {
-            JavaDependency javaDependency = newJavaDependencies.get(i);
-            List<MavenCoordinatesImpl> collect = mavenCoordinates.stream()
-                    .map(it ->
-                            (MavenCoordinatesImpl) it)
-                    .filter(it ->
-                            it.compareWithoutVersion(javaDependency.getCoordinates()))
-                    .collect(Collectors.toList());
-            if (collect.size() > 0) {
-                flatJavaLibrary(javaDependency, shadeJars);
-            }
-        }
-        return shadeJars;
-    }
-
-
-    /**
-     * 将newLibraryDependencies中需要Shade的AAR的Jar依赖(包含其本地依赖以及Maven依赖以及关联依赖)提取出来并放至newLocalJars.
-     *
-     * @param mavenCoordinates
-     * @param newLibraryDependencies
-     */
-    private static List<JavaDependency> flatNeedShadeLibraryDependencies(
-            Set<MavenCoordinates> mavenCoordinates, List<? extends AndroidDependency> newLibraryDependencies) {
-        List<JavaDependency> shadeJars = new ArrayList<>();
-        for (int i = 0; i < newLibraryDependencies.size(); i++) {
-            AndroidDependency androidDependency = newLibraryDependencies.get(i);
-            List<MavenCoordinatesImpl> coordinates = mavenCoordinates.stream()
                     .map(it ->
                             (MavenCoordinatesImpl) it)
                     .filter(it ->
                             it.compareWithoutVersion(androidDependency.getCoordinates()))
                     .collect(Collectors.toList());
-            if (coordinates.size() > 0) {
-                shadeJars.addAll(flatNeedShadeLibraryDependencies(mavenCoordinates, new LinkedList<AndroidDependency>(androidDependency.getLibraryDependencies())));
-                for (JavaDependency it : androidDependency.getJavaDependencies()) {
-                    flatJavaLibrary(it, shadeJars);
-                }
-                for (File localJarFile : androidDependency.getLocalJars()) {
-                    MavenCoordinates coord = JavaDependency.getCoordForLocalJar(localJarFile);
-                    shadeJars.add(new JavaDependency(
-                            localJarFile,
-                            coord,
-                            null,
-                            null));
-                }
+            if (collect.size() > 0) {
+                shadeAndroidDependencies.add(androidDependency);
             }
         }
-        return shadeJars;
-    }
-
-    /**
-     * 将javaLibrary中的Jar依赖及其关联依赖展开并放至javaLibraries
-     *
-     * @param javaLibrary
-     * @param javaLibraries
-     * @return
-     */
-    private static List<? extends JavaDependency> flatJavaLibrary(
-            JavaDependency javaLibrary,
-            List<JavaDependency> javaLibraries) {
-        javaLibraries.add(javaLibrary);
-        if (javaLibrary.getDependencies().size() > 0) {
-            for (JavaDependency it : javaLibrary.getDependencies()) {
-                flatJavaLibrary(it, javaLibraries);
-            }
-        }
-        return javaLibraries;
+        return shadeAndroidDependencies;
     }
 
     /**

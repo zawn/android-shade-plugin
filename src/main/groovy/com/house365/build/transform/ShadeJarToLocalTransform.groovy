@@ -102,9 +102,9 @@ class ShadeJarToLocalTransform extends Transform {
         }
 
         shadeTaskManager.getVariantShadeJars(variantData.getName()).each {
-            File distJarFile = outputProvider.getContentLocation(FilenameUtils.getBaseName(it.getJarFile().getName()), getOutputTypes(), getScopes(),
+            File distJarFile = outputProvider.getContentLocation(FilenameUtils.getBaseName(it.getClasspathFile().getName()), getOutputTypes(), getScopes(),
                     Format.JAR);
-            FileUtils.copyFile(it.getJarFile(), distJarFile)
+            FileUtils.copyFile(it.getClasspathFile(), distJarFile)
         }
     }
 }

@@ -21,7 +21,7 @@ import com.android.build.gradle.internal.transforms.JarMerger
 import com.android.build.gradle.internal.variant.BaseVariantData
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.core.DefaultManifestParser
-import com.android.builder.dependency.LibraryDependency
+import com.android.builder.dependency.level2.AndroidDependency
 import com.android.utils.FileUtils
 import com.google.common.collect.Sets
 import com.house365.build.ShadeTaskManager
@@ -131,11 +131,11 @@ public class ShadeJarTransform extends Transform {
             if (!isLibrary)
                 throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
         }
-        List<LibraryDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
+        List<AndroidDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
         LinkedHashSet<File> needCombineJars = new LinkedHashSet<>();
         libraryDependencies.each {
             needCombineJars.add(it.jarFile)
-            it.skip()
+//            it.skip()
             if (DEBUG)
                 println("Remove combine jar :" + it.getJarFile())
         }
@@ -200,7 +200,7 @@ public class ShadeJarTransform extends Transform {
     def jarjar(BaseVariantData variantData, File inputJar, File outputJar) {
         StringBuilder stringBuilder = new StringBuilder();
         String appPackageName = new DefaultManifestParser(variantData.variantConfiguration.getMainManifest()).getPackage();
-        List<LibraryDependency> libraries = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
+        List<AndroidDependency> libraries = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
         if (libraries.size() > 0)
             println "Project PackageName:" + appPackageName
         libraries.each {
