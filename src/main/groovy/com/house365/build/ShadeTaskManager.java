@@ -36,6 +36,8 @@ import com.android.builder.core.AndroidBuilder;
 import com.android.builder.dependency.DependencyMutableData;
 import com.android.builder.dependency.MavenCoordinatesImpl;
 import com.android.builder.dependency.level2.AndroidDependency;
+import com.android.builder.dependency.level2.DependencyContainer;
+import com.android.builder.dependency.level2.DependencyNode;
 import com.android.builder.dependency.level2.JavaDependency;
 import com.android.builder.model.MavenCoordinates;
 import com.android.builder.model.SourceProvider;
@@ -63,6 +65,7 @@ import org.gradle.api.internal.ConventionMapping;
 import org.gradle.api.logging.LogLevel;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
+import org.gradle.internal.Pair;
 import org.gradle.internal.reflect.Instantiator;
 
 import java.io.File;
@@ -70,6 +73,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
@@ -183,9 +187,12 @@ public class ShadeTaskManager {
         // Shade合并Jar及其关联依赖以及Shade的AAR的关联Jar依赖至本地依赖.
         DependencyGraph originalCompileGraph = (DependencyGraph) MethodInvokeUtils.invokeMethod(variantData.getVariantDependency(), "getCompileGraph");
         DependencyGraph originalPackageGraph = (DependencyGraph) MethodInvokeUtils.invokeMethod(variantData.getVariantDependency(), "getPackageGraph");
+        DependencyContainer originalPackageDependencies = variantData.getVariantDependency().getPackageDependencies();
+        HashMap<Object, com.android.builder.dependency.level2.Dependency> originalPackageGraphDependencyMap = new HashMap<>(originalPackageGraph.getDependencyMap());
+        ArrayList<DependencyNode> originalPackageGraphDependencies = new ArrayList<>(originalPackageGraph.getDependencies());
         Field isLocal = FieldUtils.getDeclaredField(JavaDependency.class, "isLocal", true);
         originalCompileGraph.getDependencyMap().entrySet().stream()
-                .filter(it -> mavenCoordinates.contains(it.getKey()))
+                .filter(it -> mavenCoordinates.contains(it.getValue().getCoordinates()))
                 .filter(it -> it.getValue() instanceof JavaDependency)
                 .map(it -> (JavaDependency) it.getValue())
                 .forEach(it -> {
@@ -195,22 +202,29 @@ public class ShadeTaskManager {
                         e.printStackTrace();
                     }
                 });
-
-        try {
-            Field dataMapField = FieldUtils.getField(originalCompileGraph.getMutableDependencyDataMap().getClass(), "dataMap", true);
-            @SuppressWarnings("unchecked")
-            Map<com.android.builder.dependency.level2.Dependency, DependencyMutableData> dataMap = (Map<com.android.builder.dependency.level2.Dependency, DependencyMutableData>) dataMapField.get(originalCompileGraph.getMutableDependencyDataMap());
-            shadeAllDependencies.stream().forEach(library -> {
-                        DependencyMutableData dependencyMutableData = dataMap.computeIfAbsent(library, k -> new DependencyMutableData());
-                        dependencyMutableData.setProvided(false);
-                    }
-            );
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        }
+        originalCompileGraph.getDependencyMap().entrySet().stream()
+                .filter(it -> mavenCoordinates.contains(it.getValue().getCoordinates()))
+                .filter(it -> !originalPackageGraphDependencyMap.containsKey(it.getKey()))
+                .forEach(it -> {
+                    originalPackageGraphDependencyMap.put(it.getKey(), it.getValue());
+                });
+        originalCompileGraph.getDependencies().stream()
+                .map(it -> Pair.of(it, originalCompileGraph.getDependencyMap().get(it.getAddress())))
+                .filter(it -> mavenCoordinates.contains(it.getRight().getCoordinates()))
+                .forEach(it -> {
+                    originalPackageGraphDependencies.add(it.getLeft());
+                });
+        Field dataMapField = FieldUtils.getField(originalCompileGraph.getMutableDependencyDataMap().getClass(), "dataMap", true);
+        @SuppressWarnings("unchecked")
+        Map<com.android.builder.dependency.level2.Dependency, DependencyMutableData> dataMap = (Map<com.android.builder.dependency.level2.Dependency, DependencyMutableData>) dataMapField.get(originalCompileGraph.getMutableDependencyDataMap());
+        shadeAllDependencies.stream().forEach(library -> {
+                    DependencyMutableData dependencyMutableData = dataMap.computeIfAbsent(library, k -> new DependencyMutableData());
+                    dependencyMutableData.setProvided(false);
+                }
+        );
 
         DependencyGraph compileGraph = new DependencyGraph(originalCompileGraph.getDependencyMap(), originalCompileGraph.getDependencies(), originalCompileGraph.getMutableDependencyDataMap());
-        DependencyGraph packageGraph = new DependencyGraph(originalPackageGraph.getDependencyMap(), originalPackageGraph.getDependencies(), originalPackageGraph.getMutableDependencyDataMap());
+        DependencyGraph packageGraph = new DependencyGraph(originalPackageGraphDependencyMap, originalPackageGraphDependencies, originalPackageGraph.getMutableDependencyDataMap());
         // 使用Shade处理后的值替换原有值.
         variantData.getVariantDependency().setDependencies(compileGraph, packageGraph, true);
         variantData.getVariantConfiguration().setResolvedDependencies(
@@ -224,7 +238,10 @@ public class ShadeTaskManager {
             task.doFirst(new Action<Task>() {
                 @Override
                 public void execute(Task task) {
-                    // TODO 处理Shade AAR的ClassPath.
+                    // 处理已经Shade AAR的ClassPath.
+                    variantData.getVariantConfiguration().setResolvedDependencies(
+                            variantData.getVariantDependency().getCompileDependencies(),
+                            originalPackageDependencies);
                 }
             });
         }
