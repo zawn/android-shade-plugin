@@ -8,8 +8,11 @@ import com.android.build.api.transform.QualifiedContent.Scope
 import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.BaseVariant
+import com.android.build.gradle.api.TestVariant
+import com.android.build.gradle.api.UnitTestVariant
 import com.android.build.gradle.internal.api.LibraryVariantImpl
 import com.android.build.gradle.internal.pipeline.TransformManager
+import com.android.build.gradle.internal.scope.VariantScope
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.utils.FileUtils
 import com.google.common.collect.Sets
@@ -32,7 +35,7 @@ class ShadeJarToLocalTransform extends Transform {
     private LibraryExtension libraryExtension
     private boolean isLibrary = true;
     private Project project
-    private variantScope
+    private VariantScope variantScope
     private ShadeTaskManager shadeTaskManager
 
 
@@ -68,6 +71,11 @@ class ShadeJarToLocalTransform extends Transform {
 
     @Override
     void transform(TransformInvocation invocation) throws TransformException, InterruptedException, IOException {
+        this.variant = ShadeAarClassTransform.getCurrentVariant(libraryExtension, invocation)
+        if (variant instanceof TestVariant || variant instanceof UnitTestVariant) {
+            // 不应该处测试相关Variant.
+            return
+        }
         @Nullable TransformOutputProvider outputProvider = invocation.getOutputProvider()
         checkNotNull(outputProvider, "Missing output object for transform " + getName())
         if (DEBUG)
@@ -80,10 +88,6 @@ class ShadeJarToLocalTransform extends Transform {
                     println directoryInput.getFile();
                 }
             }
-        File jarFile = outputProvider.getContentLocation("combined-temp", getOutputTypes(), getScopes(),
-                Format.JAR)
-        FileUtils.mkdirs(jarFile.getParentFile())
-        this.variant = ShadeAarClassTransform.getCurrentVariantScope(libraryExtension, this, jarFile)
         LibraryVariantData variantData
         if (variant instanceof LibraryVariantImpl) {
             variantData = variant.getVariantData()
@@ -95,6 +99,9 @@ class ShadeJarToLocalTransform extends Transform {
         shadeTaskManager.getVariantShadeJars(variantData.getName()).each {
             File distJarFile = outputProvider.getContentLocation(FilenameUtils.getBaseName(it.getClasspathFile().getName()), getOutputTypes(), getScopes(),
                     Format.JAR);
+            if (!distJarFile.getParentFile().exists()) {
+                distJarFile.getParentFile().mkdirs()
+            }
             FileUtils.copyFile(it.getClasspathFile(), distJarFile)
         };
     }

@@ -13,10 +13,12 @@ import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.BaseVariant
 import com.android.build.gradle.api.LibraryVariant
+import com.android.build.gradle.api.TestVariant
+import com.android.build.gradle.api.UnitTestVariant
 import com.android.build.gradle.internal.api.LibraryVariantImpl
 import com.android.build.gradle.internal.packaging.ParsedPackagingOptions
 import com.android.build.gradle.internal.pipeline.TransformManager
-import com.android.build.gradle.internal.scope.GlobalScope
+import com.android.build.gradle.internal.pipeline.TransformTask
 import com.android.build.gradle.internal.transforms.JarMerger
 import com.android.build.gradle.internal.variant.BaseVariantData
 import com.android.build.gradle.internal.variant.LibraryVariantData
@@ -92,6 +94,11 @@ public class ShadeAarClassTransform extends Transform {
 
     public void transform(@NonNull TransformInvocation invocation)
             throws TransformException, InterruptedException, IOException {
+        this.variant = getCurrentVariant(libraryExtension, invocation)
+        if (variant instanceof TestVariant || variant instanceof UnitTestVariant) {
+            // 不应该处测试相关Variant.
+            return
+        }
         @Nullable TransformOutputProvider outputProvider = invocation.getOutputProvider()
         @NonNull Collection<TransformInput> inputs = invocation.getInputs()
         checkNotNull(outputProvider, "Missing output object for transform " + getName())
@@ -111,7 +118,7 @@ public class ShadeAarClassTransform extends Transform {
                     println directoryInput.getFile();
                 }
             }
-        this.variant = getCurrentVariantScope(libraryExtension, this, jarFile)
+
         LibraryVariantData variantData = null
         if (variant instanceof LibraryVariant) {
             variantData = variant.getVariantData()
@@ -208,30 +215,18 @@ public class ShadeAarClassTransform extends Transform {
         transformer.transform(fromClassPath);
     }
 
-    static BaseVariant getCurrentVariantScope(LibraryExtension libraryExtension, Transform transform, File file) {
+    static BaseVariant getCurrentVariant(LibraryExtension libraryExtension, TransformInvocation invocation) {
+        TransformTask context = invocation.getContext();
         for (LibraryVariantImpl variant : libraryExtension.libraryVariants) {
-            LibraryVariantData variantData = variant.variantData
-            GlobalScope globalScope = variantData.getScope().getGlobalScope();
-            File parentFile = new File(globalScope.getIntermediatesDir(), "/transforms/" + transform.getName() + "/" +
-                    variant.getDirName())
-            if (checkIsParent(file, parentFile))
-                return variant;
-            parentFile = new File(globalScope.getIntermediatesDir(), "/transforms/" + transform.getName() + "/" +
-                    variant.testVariant.getDirName())
-            if (checkIsParent(file, parentFile))
-                return variant.testVariant;
-            parentFile = new File(globalScope.getIntermediatesDir(), "/transforms/" + transform.getName() + "/" +
-                    variant.unitTestVariant.getDirName())
-            if (checkIsParent(file, parentFile))
-                return variant.unitTestVariant;
+            if (variant.getName().equals(context.getVariantName())) {
+                return variant
+            } else if (variant.getTestVariant() != null && variant.getTestVariant().getName().equals(context.getVariantName())) {
+                return variant.getTestVariant()
+            } else if (variant.getUnitTestVariant() != null && variant.getUnitTestVariant().getName().equals(context.getVariantName())) {
+                return variant.getUnitTestVariant()
+            }
         }
         return null
-    }
-
-    static boolean checkIsParent(File child, File possibleParent) {
-        if (DEBUG)
-            println "ShadeAarClassTransform.checkIsParent\n" + child.toString() + "\n" + possibleParent.toString()
-        return child.getAbsolutePath().startsWith(possibleParent.getAbsolutePath());
     }
 }
 

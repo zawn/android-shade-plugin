@@ -6,7 +6,6 @@ package com.house365.build.transform
 
 import com.android.SdkConstants
 import com.android.annotations.NonNull
-import com.android.annotations.Nullable
 import com.android.build.api.transform.*
 import com.android.build.api.transform.QualifiedContent.ContentType
 import com.android.build.api.transform.QualifiedContent.Scope
@@ -14,14 +13,17 @@ import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.BaseVariant
 import com.android.build.gradle.api.LibraryVariant
-import com.android.build.gradle.internal.pipeline.ExtendedContentType
+import com.android.build.gradle.internal.pipeline.IntermediateFolderUtils
 import com.android.build.gradle.internal.pipeline.TransformManager
+import com.android.build.gradle.internal.scope.VariantScope
 import com.android.build.gradle.internal.variant.LibraryVariantData
 import com.android.builder.dependency.level2.AndroidDependency
+import com.android.builder.model.AndroidProject
 import com.android.utils.FileUtils
+import com.android.utils.StringHelper
 import com.google.common.base.Joiner
-import com.google.common.collect.ImmutableSet
 import com.google.common.collect.Lists
+import com.google.common.collect.Sets
 import com.google.common.io.ByteStreams
 import com.google.common.io.Files
 import com.house365.build.ShadeTaskManager
@@ -31,8 +33,6 @@ import org.gradle.api.ProjectConfigurationException
 import java.util.regex.Pattern
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
-
-import static com.google.common.base.Preconditions.checkNotNull
 
 /**
  * A transform that merges all the incoming inputs (folders and jars) into a single jar in a
@@ -46,9 +46,9 @@ public class ShadeJniLibsTransform extends Transform {
     private LibraryExtension libraryExtension
     private boolean isLibrary = true;
     private Project project
-    private variantScope
+    private VariantScope variantScope
     private static logger = org.slf4j.LoggerFactory.getLogger(ShadeJniLibsTransform.class)
-    File jniLibsFolder
+    private File jniLibsFolder
     private ShadeTaskManager shadeTaskManager
 
 
@@ -64,12 +64,6 @@ public class ShadeJniLibsTransform extends Transform {
         return "shadeJniLibs";
     }
 
-    @NonNull
-    @Override
-    public Set<ContentType> getInputTypes() {
-        return ImmutableSet.of(ExtendedContentType.NATIVE_LIBS);
-    }
-
     @Override
     public boolean isIncremental() {
         return false;
@@ -77,27 +71,42 @@ public class ShadeJniLibsTransform extends Transform {
 
     @NonNull
     @Override
+    public Set<ContentType> getInputTypes() {
+        return TransformManager.CONTENT_NATIVE_LIBS;
+    }
+
+    @NonNull
+    @Override
     public Set<Scope> getScopes() {
+        return TransformManager.EMPTY_SCOPES;
+    }
+
+    @NonNull
+    @Override
+    public Set<Scope> getReferencedScopes() {
         return TransformManager.SCOPE_FULL_LIBRARY;
     }
 
     public void transform(@NonNull TransformInvocation invocation)
             throws TransformException, InterruptedException, IOException {
-        // Just delegate to old method, for code that uses the old API.
-        //noinspection deprecation
-        @Nullable TransformOutputProvider outputProvider = invocation.getOutputProvider()
-        checkNotNull(outputProvider, "Missing output object for transform " + getName())
-        jniLibsFolder = outputProvider.getContentLocation("main/lib", getOutputTypes(), getScopes(), Format.DIRECTORY)
-        this.variant = ShadeAarClassTransform.getCurrentVariantScope(libraryExtension, this, jniLibsFolder)
-        if (variant instanceof LibraryVariant) {
-            variantScope = variant.variantData.getScope()
-            isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
-            if (!isLibrary)
-                throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
-            List<AndroidDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variant.getVariantData().getName())
-            for (AndroidDependency dependency : libraryDependencies) {
-                copyFromFolder(dependency.getJniFolder());
-            }
+        this.variant = ShadeAarClassTransform.getCurrentVariant(libraryExtension, invocation)
+        if (!(variant instanceof LibraryVariant)) {
+            return
+        }
+
+        variantScope = variant.variantData.getScope()
+        File outRootFolder = FileUtils.join(variantScope.getGlobalScope().getBuildDir(), StringHelper.toStrings(
+                AndroidProject.FD_INTERMEDIATES,
+                "transforms",
+                getName(),
+                variantScope.getDirectorySegments()));
+        jniLibsFolder = IntermediateFolderUtils.getContentLocation(outRootFolder, "jni", getOutputTypes(), Sets.immutableEnumSet(Scope.PROJECT), Format.DIRECTORY)
+        isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
+        if (!isLibrary)
+            throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
+        List<AndroidDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variant.getVariantData().getName())
+        for (AndroidDependency dependency : libraryDependencies) {
+            copyFromFolder(dependency.getJniFolder());
         }
         for (TransformInput input : invocation.getInputs()) {
             for (JarInput jarInput : input.getJarInputs()) {
