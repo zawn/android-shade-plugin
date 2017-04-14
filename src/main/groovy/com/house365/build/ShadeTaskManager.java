@@ -10,12 +10,13 @@ import com.android.build.gradle.internal.SdkHandler;
 import com.android.build.gradle.internal.TaskFactory;
 import com.android.build.gradle.internal.TaskManager;
 import com.android.build.gradle.internal.core.GradleVariantConfiguration;
+import com.android.build.gradle.internal.dependency.DependencyGraph;
 import com.android.build.gradle.internal.dependency.VariantDependencies;
 import com.android.build.gradle.internal.dsl.BuildType;
 import com.android.build.gradle.internal.dsl.CoreBuildType;
 import com.android.build.gradle.internal.dsl.ProductFlavor;
 import com.android.build.gradle.internal.dsl.SigningConfig;
-import com.android.build.gradle.internal.publishing.ManifestPublishArtifact;
+import com.android.build.gradle.internal.publishing.AndroidArtifacts;
 import com.android.build.gradle.internal.scope.AndroidTask;
 import com.android.build.gradle.internal.scope.AndroidTaskRegistry;
 import com.android.build.gradle.internal.scope.ConventionMappingHelper;
@@ -32,13 +33,10 @@ import com.android.build.gradle.tasks.ManifestProcessorTask;
 import com.android.build.gradle.tasks.MergeResources;
 import com.android.build.gradle.tasks.MergeSourceSetFolders;
 import com.android.builder.core.AndroidBuilder;
-import com.android.builder.dependency.DependencyContainer;
-import com.android.builder.dependency.DependencyContainerImpl;
-import com.android.builder.dependency.JarDependency;
-import com.android.builder.dependency.LibraryDependency;
 import com.android.builder.dependency.MavenCoordinatesImpl;
-import com.android.builder.model.AndroidLibrary;
-import com.android.builder.model.JavaLibrary;
+import com.android.builder.dependency.level2.AndroidDependency;
+import com.android.builder.dependency.level2.DependencyContainer;
+import com.android.builder.dependency.level2.JavaDependency;
 import com.android.builder.model.MavenCoordinates;
 import com.android.builder.model.SourceProvider;
 import com.android.ide.common.res2.AssetSet;
@@ -106,18 +104,19 @@ public class ShadeTaskManager {
     private final TaskManager taskManager;
     private TaskFactory tasks;
     private final Instantiator instantiator;
+    private final GlobalScope globalScope;
 
     private final AndroidTaskRegistry androidTasks = new AndroidTaskRegistry();
 
 
-    private final Map<String, List<JavaLibrary>> variantShadeJars = new LinkedHashMap<>();
-    private final Map<String, List<LibraryDependency>> variantShadeLibraries = new LinkedHashMap<>();
+    private final Map<String, List<JavaDependency>> variantShadeJars = new LinkedHashMap<>();
+    private final Map<String, List<AndroidDependency>> variantShadeLibraries = new LinkedHashMap<>();
 
-    public List<JavaLibrary> getVariantShadeJars(String variantName) {
+    public List<JavaDependency> getVariantShadeJars(String variantName) {
         return variantShadeJars.get(variantName);
     }
 
-    public List<LibraryDependency> getVariantShadeLibraries(String variantName) {
+    public List<AndroidDependency> getVariantShadeLibraries(String variantName) {
         return variantShadeLibraries.get(variantName);
     }
 
@@ -131,6 +130,7 @@ public class ShadeTaskManager {
             this.androidBuilder = (AndroidBuilder) FieldUtils.readField(android, "androidBuilder", true);
             this.sdkHandler = (SdkHandler) FieldUtils.readField(android, "sdkHandler", true);
             this.taskManager = (TaskManager) FieldUtils.readField(basePlugin, "taskManager", true);
+            this.globalScope = this.taskManager.getGlobalScope();
         } catch (IllegalAccessException e) {
             throw e;
         }
@@ -161,18 +161,13 @@ public class ShadeTaskManager {
         Set<MavenCoordinates> mavenCoordinates = findVariantShadeDependenciesMavenCoordinates(project, variantData);
 
         // 当前Variant需要Shade的AAR依赖.
-        List<LibraryDependency> shadeLibraries = findShadeLibraries(mavenCoordinates, variantData);
-        Map<LibraryDependency, LibraryDependency2> shadeLibraries2 = new LinkedHashMap<>();
-        for (LibraryDependency dependency : shadeLibraries) {
-            LibraryDependency2 dependency2 = new LibraryDependency2(dependency);
-            shadeLibraries2.put(dependency, dependency2);
-        }
+        List<AndroidDependency> shadeLibraries = findShadeLibraries(mavenCoordinates, variantData);
         variantShadeLibraries.put(variantData.getName(), shadeLibraries);
-        List<JavaLibrary> shadeJars = findShadeJars(mavenCoordinates, variantData);
+        List<JavaDependency> shadeJars = findShadeJars(mavenCoordinates, variantData);
         variantShadeJars.put(variantData.getName(), shadeJars);
 
         if (DEBUG) {
-            for (LibraryDependency dependency : shadeLibraries) {
+            for (AndroidDependency dependency : shadeLibraries) {
                 System.out.println(dependency);
             }
         }
@@ -181,12 +176,13 @@ public class ShadeTaskManager {
         DependencyContainer originalCompileDependencies = variantData.getVariantDependency().getCompileDependencies();
         DependencyContainer originalPackageDependencies = variantData.getVariantDependency().getPackageDependencies();
 
-        List<AndroidLibrary> androidLibraries = new LinkedList<>(originalCompileDependencies.getAndroidDependencies()).stream()
+        List<AndroidDependency> androidLibraries = new LinkedList<>(originalCompileDependencies.getDirectAndroidDependencies()).stream()
                 .filter(it ->
                         !shadeLibraries.contains(it))
                 .collect(Collectors.toList());
-        androidLibraries.addAll(shadeLibraries2.values());
-        List<JavaLibrary> javaLibraries = new LinkedList<>(originalCompileDependencies.getJarDependencies()).stream()
+//        加入需要Shade的AAR依赖.
+//        androidLibraries.addAll(shadeLibraries2.values());
+        List<JavaDependency> javaLibraries = new LinkedList<>(originalCompileDependencies.getDirectJavaDependencies()).stream()
                 .filter(it ->
                         !shadeJars.contains(it))
                 .collect(Collectors.toList());
@@ -197,33 +193,28 @@ public class ShadeTaskManager {
             } catch (IllegalAccessException e) {
                 e.printStackTrace();
             }
-            it.isProvided();
         });
-        LinkedList<JavaLibrary> newLocalJars = new LinkedList<>(originalCompileDependencies.getLocalDependencies());
+        LinkedList<JavaDependency> newLocalJars = new LinkedList<>(originalCompileDependencies.getDirectLocalJavaDependencies());
         newLocalJars.addAll(shadeJars);
         // 使用Shade处理后的值替换原有值.
-        DependencyContainerImpl compileDependencies = new DependencyContainerImpl(androidLibraries, javaLibraries, newLocalJars);
+        DependencyGraph originalCompileGraph = (DependencyGraph) MethodInvokeUtils.invokeMethod(variantData.getVariantDependency(), "getCompileGraph");
 
-        List<AndroidLibrary> packageAndroidLibraries = new ArrayList<>(originalPackageDependencies.getAndroidDependencies());
+
+        DependencyGraph compileGraph = new DependencyGraph(originalCompileGraph.getDependencyMap(), originalCompileGraph.getDependencies(), originalCompileGraph.getMutableDependencyDataMap());
+
+        List<AndroidDependency> packageAndroidLibraries = new ArrayList<>(originalPackageDependencies.getDirectAndroidDependencies());
         packageAndroidLibraries.addAll(shadeLibraries);
-        List<JavaLibrary> packageLocalJars = new ArrayList<>(originalPackageDependencies.getLocalDependencies());
+        List<JavaDependency> packageLocalJars = new ArrayList<>(originalPackageDependencies.getDirectLocalJavaDependencies());
         packageLocalJars.addAll(shadeJars);
 
-        DependencyContainerImpl packageDependencies = new DependencyContainerImpl(
-                packageAndroidLibraries,
-                originalPackageDependencies.getJarDependencies(),
-                packageLocalJars);
-        variantData.getVariantDependency().setDependencies(compileDependencies, packageDependencies);
-        variantData.getVariantConfiguration().setDependencies(compileDependencies, packageDependencies);
-        try {
-            String fieldName;
-            fieldName = "mFlatPackageDependencies";
-            fixVariantDependencies(variantData, shadeLibraries2, shadeJars, fieldName);
-            fieldName = "mFlatCompileDependencies";
-            fixVariantDependencies(variantData, shadeLibraries2, shadeJars, fieldName);
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        }
+        DependencyGraph originalPackageGraph = (DependencyGraph) MethodInvokeUtils.invokeMethod(variantData.getVariantDependency(), "getPackageGraph");
+        DependencyGraph packageGraph = new DependencyGraph(originalPackageGraph.getDependencyMap(), originalPackageGraph.getDependencies(), originalPackageGraph.getMutableDependencyDataMap());
+
+        variantData.getVariantDependency().setDependencies(compileGraph, packageGraph, true);
+        variantData.getVariantConfiguration().setResolvedDependencies(
+                variantData.getVariantDependency().getCompileDependencies(),
+                variantData.getVariantDependency().getPackageDependencies());
+
         Field transformsField = FieldUtils.getField(variantScope.getTransformManager().getClass(), "transforms", true);
         List<Transform> transforms = (List<Transform>) transformsField.get(variantScope.getTransformManager());
         Transform proguardTransform = transforms.stream().filter(it -> it.getClass().equals(ProGuardTransform.class)).findFirst().orElse(null);
@@ -234,16 +225,14 @@ public class ShadeTaskManager {
             task.doFirst(new Action<Task>() {
                 @Override
                 public void execute(Task task) {
-                    shadeLibraries2.values().stream().forEach(it -> {
-                        it.isProguard = true;
-                    });
+                    // TODO 处理Shade AAR的ClassPath.
                 }
             });
         }
 
         if (shadeLibraries != null && shadeLibraries.size() > 0) {
             // Generate AAR R.java
-            for (LibraryDependency dependency : shadeLibraries) {
+            for (AndroidDependency dependency : shadeLibraries) {
                 Field field = FieldUtils.getField(dependency.getClass(), "mIsProvided", true);
                 field.set(dependency, false);
             }
@@ -256,30 +245,6 @@ public class ShadeTaskManager {
         }
     }
 
-    private void fixVariantDependencies(LibraryVariantData variantData, Map<LibraryDependency, LibraryDependency2> map, List<JavaLibrary> shadeJars, String fieldName) throws IllegalAccessException {
-        Field field = FieldUtils.getField(variantData.getVariantConfiguration().getClass(), fieldName, true);
-        DependencyContainer mFlatPackageDependencies = (DependencyContainer) field.get(variantData.getVariantConfiguration());
-        List<JavaLibrary> flatJavaLibraries = new LinkedList<>(mFlatPackageDependencies.getJarDependencies()).stream()
-                .filter(it ->
-                        !shadeJars.contains(it))
-                .collect(Collectors.toList());
-        Field mJavaDependencies = FieldUtils.getField(mFlatPackageDependencies.getClass(), "mJavaDependencies", true);
-        mJavaDependencies.set(mFlatPackageDependencies, ImmutableList.copyOf(flatJavaLibraries));
-
-        List<AndroidLibrary> androidLibraries = new LinkedList<>(mFlatPackageDependencies.getAndroidDependencies()).stream()
-                .map(it -> (LibraryDependency) it)
-                .map(it -> {
-                    for (Map.Entry<LibraryDependency, LibraryDependency2> entry : map.entrySet()) {
-                        if (entry.getKey().getName().equals(it.getName())) {
-                            return entry.getValue();
-                        }
-                    }
-                    return it;
-                }).collect(Collectors.toList());
-        Field mLibraryDependencies = FieldUtils.getField(mFlatPackageDependencies.getClass(), "mLibraryDependencies", true);
-        mLibraryDependencies.set(mFlatPackageDependencies, ImmutableList.copyOf(androidLibraries));
-    }
-
     /**
      * 将AAR中的Resource附加现有的任务参数中.
      *
@@ -288,7 +253,7 @@ public class ShadeTaskManager {
      */
     public void appendShadeResourcesTask(
             LibraryVariantData variantData,
-            List<LibraryDependency> libraryDependencies) {
+            List<AndroidDependency> libraryDependencies) {
 
         logger.info("ShadeTaskManager.appendShadeResourcesTask");
         final String taskName = variantData.getScope().getTaskName("package", "Resources");
@@ -298,12 +263,12 @@ public class ShadeTaskManager {
         final boolean validateEnabled = AndroidGradleOptions.isResourceValidationEnabled(
                 variantData.getScope().getGlobalScope().getProject());
         for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
-            LibraryDependency dependency = libraryDependencies.get(n);
+            AndroidDependency dependency = libraryDependencies.get(n);
             logger.info("ResFolder: " + dependency.getResFolder());
             File resFolder = dependency.getResFolder();
             if (!resFolder.isFile()) {
                 ResourceSet resourceSet =
-                        new ResourceSet(dependency.getFolder().getName(), validateEnabled);
+                        new ResourceSet(dependency.getExtractedFolder().getName(), validateEnabled);
                 resourceSet.addSource(resFolder);
                 resourceSet.setFromDependency(true);
                 resourceSets.add(resourceSet);
@@ -331,18 +296,18 @@ public class ShadeTaskManager {
      */
     public void appendShadeAssetsTask(
             LibraryVariantData variantData,
-            List<LibraryDependency> libraryDependencies) {
+            List<AndroidDependency> libraryDependencies) {
 
         logger.info("ShadeTaskManager.appendShadeAssetsTask");
         MergeSourceSetFolders mergeAssetsTask = variantData.mergeAssetsTask;
 
         final LinkedHashSet<AssetSet> assetSets = Sets.newLinkedHashSet();
         for (int n = libraryDependencies.size() - 1; n >= 0; n--) {
-            LibraryDependency dependency = libraryDependencies.get(n);
+            AndroidDependency dependency = libraryDependencies.get(n);
             File assetFolder = dependency.getAssetsFolder();
             logger.info("AssetFolder: " + assetFolder);
             if (!assetFolder.isFile()) {
-                AssetSet assetSet = new AssetSet(dependency.getFolder().getName());
+                AssetSet assetSet = new AssetSet(dependency.getExtractedFolder().getName());
                 assetSet.addSource(assetFolder);
                 assetSets.add(assetSet);
             }
@@ -425,20 +390,18 @@ public class ShadeTaskManager {
     /**
      * Adds the manifest artifact for the variant.
      * <p>
-     * This artifact is added if the publishNonDefault option is {@code true}.
-     * See {@link VariantDependencies#compute variant dependencies evaluation} for more details
+     * <p>This artifact is added if the publishNonDefault option is {@code true}. See variant
+     * dependencies evaluation in {@link VariantDependencies} for more details.
      */
     private void addManifestArtifact(
             @NonNull TaskFactory tasks,
             @NonNull BaseVariantData<? extends BaseVariantOutputData> variantData) {
         if (variantData.getVariantDependency().getManifestConfiguration() != null) {
             ManifestProcessorTask mergeManifestsTask =
-                    variantData.getOutputs().get(0).getScope().getManifestProcessorTask()
-                            .get(tasks);
+                    variantData.getMainOutput().getScope().getManifestProcessorTask().get(tasks);
             project.getArtifacts().add(
                     variantData.getVariantDependency().getManifestConfiguration().getName(),
-                    new ManifestPublishArtifact(
-                            taskManager.getGlobalScope().getProjectBaseName(),
+                    AndroidArtifacts.buildManifestArtifact(globalScope.getProjectBaseName(),
                             new FileSupplier() {
                                 @NonNull
                                 @Override
@@ -471,23 +434,23 @@ public class ShadeTaskManager {
      * @param libraryVariantData
      * @return
      */
-    private static List<LibraryDependency> findShadeLibraries(
+    private static List<AndroidDependency> findShadeLibraries(
             Set<MavenCoordinates> mavenCoordinates,
             LibraryVariantData libraryVariantData) {
-        List<AndroidLibrary> androidLibraries = libraryVariantData.getVariantConfiguration().getCompileAndroidLibraries();
-        LinkedList<LibraryDependency> combinedLibraries = new LinkedList();
-        for (AndroidLibrary library : androidLibraries) {
+        List<AndroidDependency> androidLibraries = libraryVariantData.getVariantConfiguration().getCompileDependencies().getDirectAndroidDependencies();
+        LinkedList<AndroidDependency> combinedLibraries = new LinkedList();
+        for (AndroidDependency library : androidLibraries) {
             List<MavenCoordinatesImpl> collect = mavenCoordinates.stream()
                     .map(it ->
                             (MavenCoordinatesImpl) it)
                     .filter(it ->
-                            it.compareWithoutVersion(library.getResolvedCoordinates()))
+                            it.compareWithoutVersion(library.getCoordinates()))
                     .collect(Collectors.toList());
             if (collect.size() > 0) {
-                if (library instanceof LibraryDependency2) {
-                    combinedLibraries.add(((LibraryDependency2) library).getOriginal());
-                } else if (library instanceof LibraryDependency) {
-                    combinedLibraries.add((LibraryDependency) library);
+                if (library instanceof AndroidDependency2) {
+                    combinedLibraries.add(((AndroidDependency2) library).getOriginal());
+                } else if (library instanceof AndroidDependency) {
+                    combinedLibraries.add((AndroidDependency) library);
                 } else {
                     System.out.println("error type " + library);
                 }
@@ -504,17 +467,17 @@ public class ShadeTaskManager {
      * @param variantData
      * @return
      */
-    private static List<JavaLibrary> findShadeJars(
+    private static List<JavaDependency> findShadeJars(
             Set<MavenCoordinates> mavenCoordinates,
             LibraryVariantData variantData) {
         // Shade合并Jar及其关联依赖以及Shade的AAR的关联Jar依赖至本地依赖.
         DependencyContainer originalCompileDependencies = variantData.getVariantDependency().getCompileDependencies();
-        LinkedList<AndroidLibrary> newLibraryDependencies = new LinkedList<>(originalCompileDependencies.getAndroidDependencies());
-        LinkedList<JavaLibrary> newJavaDependencies = new LinkedList<>(originalCompileDependencies.getJarDependencies());
+        LinkedList<AndroidDependency> newLibraryDependencies = new LinkedList<>(originalCompileDependencies.getDirectAndroidDependencies());
+        LinkedList<JavaDependency> newJavaDependencies = new LinkedList<>(originalCompileDependencies.getDirectJavaDependencies());
 
-        List<JavaLibrary> javaJars = flatNeedShadeJavaDependencies(mavenCoordinates, newJavaDependencies);
-        List<JavaLibrary> libraryJars = flatNeedShadeLibraryDependencies(mavenCoordinates, newLibraryDependencies);
-        List<JavaLibrary> arrayList = new ArrayList(javaJars);
+        List<JavaDependency> javaJars = flatNeedShadeJavaDependencies(mavenCoordinates, newJavaDependencies);
+        List<JavaDependency> libraryJars = flatNeedShadeLibraryDependencies(mavenCoordinates, newLibraryDependencies);
+        List<JavaDependency> arrayList = new ArrayList(javaJars);
         arrayList.addAll(libraryJars);
         return arrayList;
     }
@@ -526,20 +489,20 @@ public class ShadeTaskManager {
      * @param mavenCoordinates
      * @param newJavaDependencies
      */
-    private static List<JavaLibrary> flatNeedShadeJavaDependencies(
+    private static List<JavaDependency> flatNeedShadeJavaDependencies(
             Set<MavenCoordinates> mavenCoordinates,
-            LinkedList<? extends JavaLibrary> newJavaDependencies) {
-        List<JavaLibrary> shadeJars = new ArrayList<>();
+            LinkedList<? extends JavaDependency> newJavaDependencies) {
+        List<JavaDependency> shadeJars = new ArrayList<>();
         for (int i = 0; i < newJavaDependencies.size(); i++) {
-            JavaLibrary javaLibrary = newJavaDependencies.get(i);
+            JavaDependency javaDependency = newJavaDependencies.get(i);
             List<MavenCoordinatesImpl> collect = mavenCoordinates.stream()
                     .map(it ->
                             (MavenCoordinatesImpl) it)
                     .filter(it ->
-                            it.compareWithoutVersion(javaLibrary.getResolvedCoordinates()))
+                            it.compareWithoutVersion(javaDependency.getCoordinates()))
                     .collect(Collectors.toList());
             if (collect.size() > 0) {
-                flatJavaLibrary(javaLibrary, shadeJars);
+                flatJavaLibrary(javaDependency, shadeJars);
             }
         }
         return shadeJars;
@@ -552,30 +515,29 @@ public class ShadeTaskManager {
      * @param mavenCoordinates
      * @param newLibraryDependencies
      */
-    private static List<JavaLibrary> flatNeedShadeLibraryDependencies(
-            Set<MavenCoordinates> mavenCoordinates, List<? extends AndroidLibrary> newLibraryDependencies) {
-        List<JavaLibrary> shadeJars = new ArrayList<>();
+    private static List<JavaDependency> flatNeedShadeLibraryDependencies(
+            Set<MavenCoordinates> mavenCoordinates, List<? extends AndroidDependency> newLibraryDependencies) {
+        List<JavaDependency> shadeJars = new ArrayList<>();
         for (int i = 0; i < newLibraryDependencies.size(); i++) {
-            AndroidLibrary androidLibrary = newLibraryDependencies.get(i);
+            AndroidDependency androidDependency = newLibraryDependencies.get(i);
             List<MavenCoordinatesImpl> coordinates = mavenCoordinates.stream()
                     .map(it ->
                             (MavenCoordinatesImpl) it)
                     .filter(it ->
-                            it.compareWithoutVersion(androidLibrary.getResolvedCoordinates()))
+                            it.compareWithoutVersion(androidDependency.getCoordinates()))
                     .collect(Collectors.toList());
             if (coordinates.size() > 0) {
-                shadeJars.addAll(flatNeedShadeLibraryDependencies(mavenCoordinates, new LinkedList<AndroidLibrary>(androidLibrary.getLibraryDependencies())));
-                for (JavaLibrary it : androidLibrary.getJavaDependencies()) {
+                shadeJars.addAll(flatNeedShadeLibraryDependencies(mavenCoordinates, new LinkedList<AndroidDependency>(androidDependency.getLibraryDependencies())));
+                for (JavaDependency it : androidDependency.getJavaDependencies()) {
                     flatJavaLibrary(it, shadeJars);
                 }
-                for (File localJarFile : androidLibrary.getLocalJars()) {
-                    MavenCoordinates coord = JarDependency.getCoordForLocalJar(localJarFile);
-                    shadeJars.add(new JarDependency(
+                for (File localJarFile : androidDependency.getLocalJars()) {
+                    MavenCoordinates coord = JavaDependency.getCoordForLocalJar(localJarFile);
+                    shadeJars.add(new JavaDependency(
                             localJarFile,
-                            ImmutableList.of(),
                             coord,
                             null,
-                            false));
+                            null));
                 }
             }
         }
@@ -589,12 +551,12 @@ public class ShadeTaskManager {
      * @param javaLibraries
      * @return
      */
-    private static List<? extends JavaLibrary> flatJavaLibrary(
-            JavaLibrary javaLibrary,
-            List<JavaLibrary> javaLibraries) {
+    private static List<? extends JavaDependency> flatJavaLibrary(
+            JavaDependency javaLibrary,
+            List<JavaDependency> javaLibraries) {
         javaLibraries.add(javaLibrary);
         if (javaLibrary.getDependencies().size() > 0) {
-            for (JavaLibrary it : javaLibrary.getDependencies()) {
+            for (JavaDependency it : javaLibrary.getDependencies()) {
                 flatJavaLibrary(it, javaLibraries);
             }
         }
@@ -689,59 +651,4 @@ public class ShadeTaskManager {
         }
         return configurations;
     }
-
-    public static class LibraryDependency2 extends LibraryDependency {
-
-        private LibraryDependency dependency;
-        private boolean isProguard;
-
-        LibraryDependency2(LibraryDependency dependencyImpl) {
-            super(
-                    dependencyImpl.getBundle(),
-                    dependencyImpl.getFolder(),
-                    new ArrayList(dependencyImpl.getLibraryDependencies()),
-                    new ArrayList(dependencyImpl.getJavaDependencies()),
-                    dependencyImpl.getName(),
-                    dependencyImpl.getProjectVariant(),
-                    dependencyImpl.getProject(),
-                    dependencyImpl.getRequestedCoordinates(),
-                    dependencyImpl.getResolvedCoordinates(),
-                    dependencyImpl.isProvided()
-            );
-            this.dependency = dependencyImpl;
-        }
-
-        LibraryDependency getOriginal() {
-            return dependency;
-        }
-
-        @Override
-        public File getJarFile() {
-            if (isProguard) {
-                return new File(this.getJarsRootFolder(), "none");
-            } else {
-                return dependency.getJarFile();
-            }
-        }
-
-        @Override
-        public List<File> getLocalJars() {
-            return Lists.newArrayList();
-        }
-
-        @Override
-        public boolean isProvided() {
-            return false;
-        }
-
-        @Override
-        public String toString() {
-            return super.toString();
-        }
-
-        public void setProguard(boolean proguard) {
-            isProguard = proguard;
-        }
-    }
-
 }

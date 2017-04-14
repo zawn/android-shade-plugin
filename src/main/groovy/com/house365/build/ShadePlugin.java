@@ -9,14 +9,13 @@ import com.android.build.gradle.internal.TaskContainerAdaptor;
 import com.android.build.gradle.internal.TaskFactory;
 import com.android.build.gradle.internal.TaskManager;
 import com.android.build.gradle.internal.VariantManager;
-import com.android.build.gradle.internal.profile.SpanRecorders;
 import com.android.build.gradle.internal.variant.BaseVariantData;
 import com.android.build.gradle.internal.variant.BaseVariantOutputData;
 import com.android.build.gradle.internal.variant.LibraryVariantData;
 import com.android.builder.model.Version;
 import com.android.builder.profile.Recorder;
 import com.android.builder.profile.ThreadRecorder;
-import com.google.wireless.android.sdk.stats.AndroidStudioStats.GradleBuildProfileSpan.ExecutionType;
+import com.google.wireless.android.sdk.stats.GradleBuildProfileSpan.ExecutionType;
 import com.house365.build.transform.ShadeJarToLocalTransform;
 import com.house365.build.transform.ShadeJarTransform;
 import com.house365.build.transform.ShadeJniLibsTransform;
@@ -73,7 +72,7 @@ public class ShadePlugin implements Plugin<Project> {
                     "The 'com.baseExtension.library' plugin not being applied, Android shade plugins does not work.");
         }
         String[] strings = Version.ANDROID_GRADLE_PLUGIN_VERSION.split("-");
-        if (strings.length > 0 && strings[0].matches("^2.2.(\\*|\\d+)$")) {
+        if (strings.length > 0 && strings[0].matches("^2.3.(\\*|\\d+)$")) {
             // version match
         } else {
             throw new ProjectConfigurationException("Android Shade Plugin needs and match the version " +
@@ -160,10 +159,10 @@ public class ShadePlugin implements Plugin<Project> {
             if (baseVariantData instanceof LibraryVariantData) {
                 final LibraryVariantData variantData = (LibraryVariantData) baseVariantData;
 
-                SpanRecorders.record(
-                        project,
-                        variantData.getName(),
+                ThreadRecorder.get().record(
                         ExecutionType.VARIANT_MANAGER_CREATE_TASKS_FOR_VARIANT,
+                        project.getPath(),
+                        variantData.getName(),
                         new Recorder.Block<Void>() {
                             @Override
                             public Void call() throws Exception {
