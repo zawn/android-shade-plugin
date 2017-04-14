@@ -16,8 +16,8 @@ import com.android.builder.model.Version;
 import com.android.builder.profile.Recorder;
 import com.android.builder.profile.ThreadRecorder;
 import com.google.wireless.android.sdk.stats.GradleBuildProfileSpan.ExecutionType;
-import com.house365.build.transform.ShadeJarToLocalTransform;
 import com.house365.build.transform.ShadeAarClassTransform;
+import com.house365.build.transform.ShadeJarToLocalTransform;
 import com.house365.build.transform.ShadeJniLibsTransform;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.gradle.api.Plugin;
@@ -129,9 +129,6 @@ public class ShadePlugin implements Plugin<Project> {
         baseExtension.registerTransform(shadeJarToLocalTransform);
         shadeJarTransform = new ShadeAarClassTransform(project, baseExtension, shadeTaskManager);
         baseExtension.registerTransform(shadeJarTransform);
-
-        shadeJniLibsTransform = new ShadeJniLibsTransform(project, baseExtension, shadeTaskManager);
-        baseExtension.registerTransform(shadeJniLibsTransform);
 
         project.afterEvaluate(project -> {
             ThreadRecorder.get().record(ExecutionType.BASE_PLUGIN_CREATE_ANDROID_TASKS,

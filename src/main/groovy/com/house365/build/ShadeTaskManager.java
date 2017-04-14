@@ -16,6 +16,8 @@ import com.android.build.gradle.internal.dsl.BuildType;
 import com.android.build.gradle.internal.dsl.CoreBuildType;
 import com.android.build.gradle.internal.dsl.ProductFlavor;
 import com.android.build.gradle.internal.dsl.SigningConfig;
+import com.android.build.gradle.internal.pipeline.TransformManager;
+import com.android.build.gradle.internal.pipeline.TransformTask;
 import com.android.build.gradle.internal.publishing.AndroidArtifacts;
 import com.android.build.gradle.internal.scope.AndroidTask;
 import com.android.build.gradle.internal.scope.AndroidTaskRegistry;
@@ -50,6 +52,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.house365.build.gradle.tasks.MergeShaderManifestsConfigAction;
+import com.house365.build.transform.ShadeJniLibsTransform;
 import groovy.lang.GroovyObject;
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.commons.lang3.reflect.MethodInvokeUtils;
@@ -79,6 +82,7 @@ import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
@@ -86,7 +90,7 @@ import java.util.stream.Collectors;
 import static com.android.build.gradle.internal.TaskManager.DIR_BUNDLES;
 
 /**
- * Shade task manager for creating tasks in an Android library project.
+ * Shade task manager for creating taskFactory in an Android library project.
  * <p/>
  * Created by ZhangZhenli on 2016/3/29.
  */
@@ -106,11 +110,11 @@ public class ShadeTaskManager {
     private final boolean isLibrary;
     private final Project project;
     private final TaskManager taskManager;
-    private TaskFactory tasks;
+    private TaskFactory taskFactory;
     private final Instantiator instantiator;
     private final GlobalScope globalScope;
 
-    private final AndroidTaskRegistry androidTasks = new AndroidTaskRegistry();
+    private final AndroidTaskRegistry androidTasks;
 
 
     private final Map<String, List<JavaDependency>> variantShadeJars = new LinkedHashMap<>();
@@ -126,7 +130,7 @@ public class ShadeTaskManager {
 
     public ShadeTaskManager(Project project, TaskFactory tasks, Instantiator instantiator, BasePlugin basePlugin, BaseExtension baseExtension) throws IllegalAccessException {
         this.project = project;
-        this.tasks = tasks;
+        this.taskFactory = tasks;
         this.instantiator = instantiator;
         this.basePlugin = basePlugin;
         this.android = baseExtension;
@@ -135,6 +139,7 @@ public class ShadeTaskManager {
             this.sdkHandler = (SdkHandler) FieldUtils.readField(android, "sdkHandler", true);
             this.taskManager = (TaskManager) FieldUtils.readField(basePlugin, "taskManager", true);
             this.globalScope = this.taskManager.getGlobalScope();
+            this.androidTasks = taskManager.getAndroidTasks();
         } catch (IllegalAccessException e) {
             throw e;
         }
@@ -142,8 +147,6 @@ public class ShadeTaskManager {
         this.productFlavors = android.getProductFlavors();
         this.signingConfigs = android.getSigningConfigs();
         this.isLibrary = android instanceof LibraryExtension ? true : false;
-
-
     }
 
 
@@ -231,7 +234,7 @@ public class ShadeTaskManager {
                 variantData.getVariantDependency().getCompileDependencies(),
                 variantData.getVariantDependency().getPackageDependencies());
 
-        Transform proguardTransform = getProguardTransform(variantScope);
+        Transform proguardTransform = getTransform(variantScope, ProGuardTransform.class);
         if (proguardTransform != null) {
             String taskName = getTransformTaskName(variantScope, proguardTransform);
             Task task = project.getTasks().findByName(taskName);
@@ -252,12 +255,29 @@ public class ShadeTaskManager {
 
             appendShadeAssetsTask(variantData, shadeAndroidDependencies);
 
-            createMergeLibraryManifestsTask(tasks, variantData.getScope());
+            createMergeLibraryManifestsTask(taskFactory, variantData.getScope());
+
+            createSyncShadeJniLibsTransform(variantData, variantScope);
         }
     }
 
-    private String getTransformTaskName(VariantScope variantScope, Transform proguardTransform) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
-        String taskNamePrefix = (String) MethodInvokeUtils.invokeStaticMethod(variantScope.getTransformManager().getClass(), "getTaskNamePrefix", proguardTransform);
+    private void createSyncShadeJniLibsTransform(LibraryVariantData variantData, VariantScope variantScope) {
+        TransformManager transformManager = variantScope.getTransformManager();
+        Optional<AndroidTask<TransformTask>> taskOptional
+                = transformManager.addTransform(taskFactory, variantScope, new ShadeJniLibsTransform(this, variantData));
+        AndroidTask<TransformTask> shadeJniLibsAndroidTask = taskOptional.get();
+        AndroidTask<?> syncJniLibsAndroidTask = transformManager.getTaskRegistry().get(shadeJniLibsAndroidTask.getName().replace("ShadeJniLibs", "SyncJniLibs"));
+        List<AndroidTask<? extends Task>> downstreamTasks = syncJniLibsAndroidTask.getDownstreamTasks();
+        downstreamTasks.stream().forEach(it -> {
+            it.dependsOn(taskFactory, shadeJniLibsAndroidTask);
+        });
+        shadeJniLibsAndroidTask.dependsOn(taskFactory, syncJniLibsAndroidTask);
+        Task bundle = project.getTasks().findByName(variantScope.getTaskName("bundle"));
+        taskOptional.ifPresent(t -> bundle.dependsOn(t.getName()));
+    }
+
+    private String getTransformTaskName(VariantScope variantScope, Transform transform) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+        String taskNamePrefix = (String) MethodInvokeUtils.invokeStaticMethod(variantScope.getTransformManager().getClass(), "getTaskNamePrefix", transform);
         return variantScope.getTaskName(taskNamePrefix);
     }
 
@@ -265,14 +285,15 @@ public class ShadeTaskManager {
      * 获取Proguard实例.
      *
      * @param variantScope
+     * @param transformClass
      * @return
      * @throws IllegalAccessException
      */
-    private Transform getProguardTransform(VariantScope variantScope) throws IllegalAccessException {
+    private Transform getTransform(VariantScope variantScope, Class<? extends Transform> transformClass) throws IllegalAccessException {
         Field transformsField = FieldUtils.getField(variantScope.getTransformManager().getClass(), "transforms", true);
         @SuppressWarnings("unchecked")
         List<Transform> transforms = (List<Transform>) transformsField.get(variantScope.getTransformManager());
-        return transforms.stream().filter(it -> it.getClass().equals(ProGuardTransform.class)).findFirst().orElse(null);
+        return transforms.stream().filter(it -> it.getClass().equals(transformClass)).findFirst().orElse(null);
     }
 
     /**
@@ -287,7 +308,7 @@ public class ShadeTaskManager {
 
         logger.info("ShadeTaskManager.appendShadeResourcesTask");
         final String taskName = variantData.getScope().getTaskName("package", "Resources");
-        final MergeResources mergeResourcesTask = (MergeResources) tasks.named(taskName);
+        final MergeResources mergeResourcesTask = (MergeResources) taskFactory.named(taskName);
 
         final LinkedHashSet<ResourceSet> resourceSets = Sets.newLinkedHashSet();
         final boolean validateEnabled = AndroidGradleOptions.isResourceValidationEnabled(
