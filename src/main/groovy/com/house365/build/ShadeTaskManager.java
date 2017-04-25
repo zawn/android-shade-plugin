@@ -177,7 +177,18 @@ public class ShadeTaskManager {
                 .filter(it -> it instanceof JavaDependency)
                 .map(it -> (JavaDependency) it)
                 .collect(Collectors.toList());
-
+        shadeAndroidDependencies.stream()
+                .filter(it -> it.getLocalJars().size() > 0)
+                .map(it -> {
+                    List<JavaDependency> list = new ArrayList<>();
+                    for (File localJarFile : it.getLocalJars()) {
+                        list.add(new JavaDependency(localJarFile));
+                    }
+                    return list;
+                })
+                .forEach(it -> {
+                    shadeJavaDependencies.addAll(it);
+                });
         variantShadeLibraries.put(variantData.getName(), shadeAndroidDependencies);
         variantShadeJars.put(variantData.getName(), shadeJavaDependencies);
 
