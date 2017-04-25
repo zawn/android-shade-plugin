@@ -60,10 +60,9 @@ public class ShadeJniLibsTransform extends LibraryJniLibsTransform {
             throws TransformException, InterruptedException, IOException {
         List<AndroidDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
         Set<String> filters = variantData.getVariantConfiguration().getSupportedAbis();
-        Set<String> jniDirNames = new HashSet<>();
+        Map<String, AndroidDependency> jniDirNames = new HashMap<>();
         for (AndroidDependency dependency : libraryDependencies) {
             String name = getUniqueInputName(dependency.getJniFolder());
-            jniDirNames.add(name);
             boolean hasAbi = false
             boolean missingAbi = false
             for (String abi : filters) {
@@ -75,17 +74,28 @@ public class ShadeJniLibsTransform extends LibraryJniLibsTransform {
             }
             if (hasAbi && missingAbi) {
                 throw new UnsupportedOperationException("Can not find all " + filters.join(",") + " abis in shade dependency:" + dependency.getCoordinates() + ",you may need to reconfigure ndk abiFilters")
+            } else if (hasAbi) {
+                jniDirNames.put(name, dependency);
             }
         }
         for (TransformInput input : invocation.getReferencedInputs()) {
             for (JarInput jarInput : input.getJarInputs()) {
-                if (jniDirNames.contains(jarInput.getName()))
+                if (jniDirNames.containsKey(jarInput.getName())) {
+                    jniDirNames.remove(jarInput.getName())
                     copyFromJar(jarInput.getFile())
+                }
             }
 
             for (DirectoryInput directoryInput : input.getDirectoryInputs()) {
-                if (jniDirNames.contains(directoryInput.getName()))
+                if (jniDirNames.containsKey(directoryInput.getName())) {
+                    jniDirNames.remove(directoryInput.getName())
                     copyFromFolder(directoryInput.getFile())
+                }
+            }
+        }
+        if (!jniDirNames.isEmpty()) {
+            for (AndroidDependency androidDependency : jniDirNames.values()) {
+                copyFromFolder(androidDependency.getJniFolder())
             }
         }
     }
