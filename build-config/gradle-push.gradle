@@ -72,9 +72,6 @@ afterEvaluate { project ->
                         developer {
                             name 'ZhangZhenli'
                         }
-                        developer {
-                            name 'Fanlei'
-                        }
                     }
 
                     licenses {
@@ -96,19 +93,19 @@ afterEvaluate { project ->
         required { isReleaseBuild() && gradle.taskGraph.hasTask("uploadArchives") }
         sign configurations.archives
     }
-	
-	tasks.withType(Javadoc) {
-	    options {
-	            failOnError false
-	            encoding "utf-8"
-	            charSet "utf-8"
-	            links "http://docs.oracle.com/javase/7/docs/api/"
-	        }
-	        // fix java 8 very strict.
-	        if (JavaVersion.current().isJava8Compatible()) {
-	            options.addStringOption('Xdoclint:none', '-quiet')
-	        }
-	}
+
+    tasks.withType(Javadoc) {
+        options {
+            failOnError false
+            encoding "utf-8"
+            charSet "utf-8"
+            links "http://docs.oracle.com/javase/7/docs/api/"
+        }
+        // fix java 8 very strict.
+        if (JavaVersion.current().isJava8Compatible()) {
+            options.addStringOption('Xdoclint:none', '-quiet')
+        }
+    }
 
 
     task javadocJar(type: Jar, dependsOn: javadoc) {

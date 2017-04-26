@@ -46,7 +46,7 @@ dependencies {
         transitive false
     }
     compile 'org.apache.commons:commons-lang3:3.4'
-    provided "com.android.tools.build:gradle:2.3.0"
+    provided "com.android.tools.build:gradle:$androidGradleVersion"
     //自定义的Android Plugin for Gradle
     //provided 'com.house365.tools.build:gradle:2.0.0-SNAPSHOT'
     provided gradleApi()
