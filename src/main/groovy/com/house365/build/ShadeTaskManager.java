@@ -51,7 +51,7 @@ import com.android.utils.StringHelper;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import com.house365.build.gradle.tasks.MergeShaderManifestsConfigAction;
+import com.house365.build.gradle.tasks.MergeShadeManifests;
 import com.house365.build.transform.ShadeJniLibsTransform;
 import groovy.lang.GroovyObject;
 import org.apache.commons.lang3.reflect.FieldUtils;
@@ -486,7 +486,7 @@ public class ShadeTaskManager {
     protected TaskConfigAction<? extends ManifestProcessorTask> getMergeManifestConfig(
             @NonNull VariantOutputScope scope,
             @NonNull List<ManifestMerger2.Invoker.Feature> optionalFeatures) {
-        return new MergeShaderManifestsConfigAction(scope, optionalFeatures);
+        return new MergeShadeManifests.ConfigAction(scope, optionalFeatures);
     }
 
     /**
