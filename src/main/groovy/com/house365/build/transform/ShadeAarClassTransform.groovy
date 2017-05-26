@@ -13,8 +13,6 @@ import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.LibraryExtension
 import com.android.build.gradle.api.BaseVariant
 import com.android.build.gradle.api.LibraryVariant
-import com.android.build.gradle.api.TestVariant
-import com.android.build.gradle.api.UnitTestVariant
 import com.android.build.gradle.internal.api.LibraryVariantImpl
 import com.android.build.gradle.internal.packaging.ParsedPackagingOptions
 import com.android.build.gradle.internal.pipeline.TransformManager
@@ -95,10 +93,6 @@ public class ShadeAarClassTransform extends Transform {
     public void transform(@NonNull TransformInvocation invocation)
             throws TransformException, InterruptedException, IOException {
         this.variant = getCurrentVariant(libraryExtension, invocation)
-        if (variant instanceof TestVariant || variant instanceof UnitTestVariant) {
-            // 不应该处测试相关Variant.
-            return
-        }
         @Nullable TransformOutputProvider outputProvider = invocation.getOutputProvider()
         @NonNull Collection<TransformInput> inputs = invocation.getInputs()
         checkNotNull(outputProvider, "Missing output object for transform " + getName())
@@ -127,13 +121,16 @@ public class ShadeAarClassTransform extends Transform {
             if (!isLibrary)
                 throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
         }
-        List<AndroidDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
-        LinkedHashSet<File> needCombineJars = new LinkedHashSet<>()
-        libraryDependencies.each {
-            needCombineJars.add(it.jarFile)
+        LinkedHashSet<File> needCombineJars
+        if (variantData != null) {
+            List<AndroidDependency> libraryDependencies = shadeTaskManager.getVariantShadeLibraries(variantData.getName())
+            needCombineJars = new LinkedHashSet<>()
+            libraryDependencies.each {
+                needCombineJars.add(it.jarFile)
 //            it.skip()
-            if (DEBUG)
-                println("Remove combine jar :" + it.getJarFile())
+                if (DEBUG)
+                    println("Remove combine jar :" + it.getJarFile())
+            }
         }
         def packagingOptions = variantScope.getGlobalScope().getExtension().getPackagingOptions()
         def parsedPackagingOptions = new ParsedPackagingOptions(packagingOptions)
