@@ -53,7 +53,6 @@ public class ShadeAarClassTransform extends Transform {
     private LibraryExtension libraryExtension
     private boolean isLibrary = true;
     private Project project
-    private variantScope
     private ShadeTaskManager shadeTaskManager
 
 
@@ -116,8 +115,7 @@ public class ShadeAarClassTransform extends Transform {
         LibraryVariantData variantData = null
         if (variant instanceof LibraryVariant) {
             variantData = variant.getVariantData()
-            variantScope = variantData.getScope()
-            isLibrary = this.variantScope.getVariantData() instanceof LibraryVariantData;
+            isLibrary = variantData instanceof LibraryVariantData;
             if (!isLibrary)
                 throw new ProjectConfigurationException("The shade plugin only be used for android library.", null)
         }
@@ -132,7 +130,7 @@ public class ShadeAarClassTransform extends Transform {
                     println("Remove combine jar :" + it.getJarFile())
             }
         }
-        def packagingOptions = variantScope.getGlobalScope().getExtension().getPackagingOptions()
+        def packagingOptions = libraryExtension.getPackagingOptions()
         def parsedPackagingOptions = new ParsedPackagingOptions(packagingOptions)
         jarMerger(jarFile, inputs, needCombineJars,
                 new ZipEntryFilterUtil.JarWhitoutRFilter(parsedPackagingOptions, null))
