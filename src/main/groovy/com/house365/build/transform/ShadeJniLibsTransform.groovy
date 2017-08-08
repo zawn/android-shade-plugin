@@ -18,6 +18,7 @@ import com.google.common.io.ByteStreams
 import com.google.common.io.Files
 import com.house365.build.ShadeTaskManager
 import org.apache.commons.lang3.reflect.MethodInvokeUtils
+import org.gradle.tooling.exceptions.UnsupportedBuildArgumentException
 
 import java.util.regex.Pattern
 import java.util.zip.ZipEntry
@@ -44,10 +45,17 @@ public class ShadeJniLibsTransform extends LibraryJniLibsTransform {
         this.variantData = variantData
         this.shadeTaskManager = shadeTaskManager
         StringBuilder stringBuilder = new StringBuilder()
-        for (String abi : this.variantData.getVariantConfiguration().getSupportedAbis()) {
-            stringBuilder.append("(").append(Pattern.quote(abi)).append(")")
+        if (this.variantData.getVariantConfiguration().getSupportedAbis() != null) {
+            if (this.variantData.getVariantConfiguration().getSupportedAbis().size() == 0) {
+                throw new UnsupportedBuildArgumentException("please keep at least one abi in ndk.abiFilters.")
+            }
+            for (String abi : this.variantData.getVariantConfiguration().getSupportedAbis()) {
+                stringBuilder.append("(").append(Pattern.quote(abi)).append(")")
+            }
+            this.pattern = Pattern.compile("[" + stringBuilder + "]+/[^/]+\\.so");
+        } else {
+            throw new UnsupportedBuildArgumentException("please configure abiFilters.")
         }
-        this.pattern = Pattern.compile("[" + stringBuilder + "]+/[^/]+\\.so");
     }
 
     @NonNull
