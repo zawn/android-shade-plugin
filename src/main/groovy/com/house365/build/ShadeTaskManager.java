@@ -10,7 +10,6 @@ import com.android.build.gradle.internal.SdkHandler;
 import com.android.build.gradle.internal.TaskFactory;
 import com.android.build.gradle.internal.TaskManager;
 import com.android.build.gradle.internal.core.GradleVariantConfiguration;
-import com.android.build.gradle.internal.dependency.DependencyGraph;
 import com.android.build.gradle.internal.dependency.VariantDependencies;
 import com.android.build.gradle.internal.dsl.BuildType;
 import com.android.build.gradle.internal.dsl.CoreBuildType;
@@ -21,15 +20,11 @@ import com.android.build.gradle.internal.pipeline.TransformTask;
 import com.android.build.gradle.internal.publishing.AndroidArtifacts;
 import com.android.build.gradle.internal.scope.AndroidTask;
 import com.android.build.gradle.internal.scope.AndroidTaskRegistry;
-import com.android.build.gradle.internal.scope.ConventionMappingHelper;
 import com.android.build.gradle.internal.scope.GlobalScope;
 import com.android.build.gradle.internal.scope.TaskConfigAction;
-import com.android.build.gradle.internal.scope.VariantOutputScope;
 import com.android.build.gradle.internal.scope.VariantScope;
 import com.android.build.gradle.internal.tasks.FileSupplier;
 import com.android.build.gradle.internal.transforms.ProGuardTransform;
-import com.android.build.gradle.internal.variant.BaseVariantData;
-import com.android.build.gradle.internal.variant.BaseVariantOutputData;
 import com.android.build.gradle.internal.variant.LibraryVariantData;
 import com.android.build.gradle.tasks.ManifestProcessorTask;
 import com.android.build.gradle.tasks.MergeResources;
@@ -38,7 +33,6 @@ import com.android.builder.core.AndroidBuilder;
 import com.android.builder.dependency.DependencyMutableData;
 import com.android.builder.dependency.MavenCoordinatesImpl;
 import com.android.builder.dependency.level2.AndroidDependency;
-import com.android.builder.dependency.level2.DependencyContainer;
 import com.android.builder.dependency.level2.DependencyNode;
 import com.android.builder.dependency.level2.JavaDependency;
 import com.android.builder.model.MavenCoordinates;
@@ -51,9 +45,8 @@ import com.android.utils.StringHelper;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import com.house365.build.gradle.tasks.MergeShadeManifests;
 import com.house365.build.transform.ShadeJniLibsTransform;
-import groovy.lang.GroovyObject;
+
 import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.commons.lang3.reflect.MethodInvokeUtils;
 import org.gradle.api.Action;
@@ -87,6 +80,8 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
+import groovy.lang.GroovyObject;
+
 import static com.android.build.gradle.internal.TaskManager.DIR_BUNDLES;
 
 /**
@@ -112,7 +107,6 @@ public class ShadeTaskManager {
     private final TaskManager taskManager;
     private TaskFactory taskFactory;
     private final Instantiator instantiator;
-    private final GlobalScope globalScope;
 
     private final AndroidTaskRegistry androidTasks;
 
@@ -128,7 +122,9 @@ public class ShadeTaskManager {
         return variantShadeLibraries.get(variantName);
     }
 
-    public ShadeTaskManager(Project project, TaskFactory tasks, Instantiator instantiator, BasePlugin basePlugin, BaseExtension baseExtension) throws IllegalAccessException {
+    public ShadeTaskManager(Project project, TaskFactory tasks, Instantiator instantiator,
+                            BasePlugin basePlugin,
+                            BaseExtension baseExtension) throws IllegalAccessException {
         this.project = project;
         this.taskFactory = tasks;
         this.instantiator = instantiator;
@@ -138,7 +134,6 @@ public class ShadeTaskManager {
             this.androidBuilder = (AndroidBuilder) FieldUtils.readField(android, "androidBuilder", true);
             this.sdkHandler = (SdkHandler) FieldUtils.readField(android, "sdkHandler", true);
             this.taskManager = (TaskManager) FieldUtils.readField(basePlugin, "taskManager", true);
-            this.globalScope = this.taskManager.getGlobalScope();
             this.androidTasks = taskManager.getAndroidTasks();
         } catch (IllegalAccessException e) {
             throw e;
@@ -149,8 +144,14 @@ public class ShadeTaskManager {
         this.isLibrary = android instanceof LibraryExtension ? true : false;
     }
 
+    public void createTasksForVariantScope(TaskFactory tasks, VariantScope variantScope) {
+        logger.debug("createTasksForVariantScope() called with: tasks = [" + tasks + "], variantScope = [" + variantScope + "]");
 
-    public void createTasksForVariantData(TaskManager taskManager, LibraryVariantData variantData) throws IllegalAccessException, NoSuchMethodException, InvocationTargetException {
+    }
+
+
+    public void createTasksForVariantData(TaskManager taskManager,
+                                          LibraryVariantData variantData) throws IllegalAccessException, NoSuchMethodException, InvocationTargetException {
         final LibraryVariantData libVariantData = (LibraryVariantData) variantData;
         final GradleVariantConfiguration variantConfig = variantData.getVariantConfiguration();
         final CoreBuildType buildType = variantConfig.getBuildType();
@@ -197,6 +198,9 @@ public class ShadeTaskManager {
                 System.out.println(dependency);
             }
         }
+
+
+
 
         // Shade合并Jar及其关联依赖以及Shade的AAR的关联Jar依赖至本地依赖.
         DependencyGraph originalCompileGraph = (DependencyGraph) MethodInvokeUtils.invokeMethod(variantData.getVariantDependency(), "getCompileGraph");
@@ -272,7 +276,8 @@ public class ShadeTaskManager {
         }
     }
 
-    private void createSyncShadeJniLibsTransform(LibraryVariantData variantData, VariantScope variantScope) {
+    private void createSyncShadeJniLibsTransform(LibraryVariantData variantData,
+                                                 VariantScope variantScope) {
         TransformManager transformManager = variantScope.getTransformManager();
         Optional<AndroidTask<TransformTask>> taskOptional
                 = transformManager.addTransform(taskFactory, variantScope, new ShadeJniLibsTransform(this, variantData));
@@ -287,7 +292,8 @@ public class ShadeTaskManager {
         taskOptional.ifPresent(t -> bundle.dependsOn(t.getName()));
     }
 
-    private String getTransformTaskName(VariantScope variantScope, Transform transform) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+    private String getTransformTaskName(VariantScope variantScope,
+                                        Transform transform) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
         String taskNamePrefix = (String) MethodInvokeUtils.invokeStaticMethod(variantScope.getTransformManager().getClass(), "getTaskNamePrefix", transform);
         return variantScope.getTaskName(taskNamePrefix);
     }
@@ -300,7 +306,8 @@ public class ShadeTaskManager {
      * @return
      * @throws IllegalAccessException
      */
-    private Transform getTransform(VariantScope variantScope, Class<? extends Transform> transformClass) throws IllegalAccessException {
+    private Transform getTransform(VariantScope variantScope,
+                                   Class<? extends Transform> transformClass) throws IllegalAccessException {
         Field transformsField = FieldUtils.getField(variantScope.getTransformManager().getClass(), "transforms", true);
         @SuppressWarnings("unchecked")
         List<Transform> transforms = (List<Transform>) transformsField.get(variantScope.getTransformManager());
@@ -386,7 +393,6 @@ public class ShadeTaskManager {
                 return Lists.newArrayList(assetSets);
             }
         });
-
     }
 
     /**
@@ -424,7 +430,6 @@ public class ShadeTaskManager {
             scope.setManifestProcessorTask(processShadeManifestTask);
             addManifestArtifact(tasks, scope.getVariantScope().getVariantData());
         }
-
     }
 
     /**
@@ -433,7 +438,8 @@ public class ShadeTaskManager {
      * @param variantScope
      * @return
      */
-    private ImmutableList<ManifestMerger2.Invoker.Feature> getFeatures(@NonNull VariantScope variantScope) {
+    private ImmutableList<ManifestMerger2.Invoker.Feature> getFeatures(
+            @NonNull VariantScope variantScope) {
         try {
             Object incrementalMode = MethodInvokeUtils.invokeMethod(taskManager, "getIncrementalMode", variantScope.getVariantConfiguration());
             return !incrementalMode.toString().equals("NONE")
