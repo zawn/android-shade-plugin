@@ -148,10 +148,10 @@ public class ShadeTaskManager extends TaskManager {
         for (Configuration configuration : configurations) {
             runtimeClasspath.extendsFrom(configuration);
         }
-        ArtifactCollection artifactCollection = getArtifactCollection(variantName, AndroidArtifacts.ArtifactType.JNI);
-        Configuration shadeAaJniClasspath = project.getConfigurations().maybeCreate(variantName + "ShadeAarJniClasspath");
-        project.getDependencies().add(shadeAaJniClasspath.getName(), project.files(artifactCollection.getArtifactFiles().getFiles()));
-        runtimeClasspath.extendsFrom(shadeAaJniClasspath);
+        ArtifactCollection aidlArtifacts = getArtifactCollection(variantName, AndroidArtifacts.ArtifactType.AIDL);
+        if (aidlArtifacts.getArtifacts().size() > 0) {
+            throw new GradleException("The current version of the shade plug-in does not support AIDL merge processing.");
+        }
 
         project.getConfigurations().getByName(variantName + "UnitTestRuntimeClasspath").extendsFrom(shadeJarClasspath);
 
