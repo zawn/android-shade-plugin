@@ -3,17 +3,16 @@ package com.house365.build;
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import android.databinding.tool.DataBindingBuilder;
 
-import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.reflect.MethodInvokeUtils;
 import org.gradle.api.Action;
 import org.gradle.api.GradleException;
@@ -22,14 +21,19 @@ import org.gradle.api.Task;
 import org.gradle.api.artifacts.ArtifactCollection;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
-import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
+import org.gradle.api.artifacts.result.ResolvedArtifactResult;
 import org.gradle.api.attributes.AttributeContainer;
-import org.gradle.api.specs.Spec;
+import org.gradle.api.attributes.Usage;
+import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.specs.CompositeSpec;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry;
 import org.jetbrains.annotations.NotNull;
 
 import com.android.annotations.NonNull;
+import com.android.build.api.attributes.BuildTypeAttr;
 import com.android.build.api.transform.Context;
 import com.android.build.api.transform.QualifiedContent;
 import com.android.build.api.transform.TransformInvocation;
@@ -39,13 +43,16 @@ import com.android.build.gradle.internal.SdkHandler;
 import com.android.build.gradle.internal.TaskFactory;
 import com.android.build.gradle.internal.TaskManager;
 import com.android.build.gradle.internal.core.GradleVariantConfiguration;
+import com.android.build.gradle.internal.dependency.AndroidTypeAttr;
 import com.android.build.gradle.internal.pipeline.TransformManager;
 import com.android.build.gradle.internal.pipeline.TransformTask;
 import com.android.build.gradle.internal.publishing.AndroidArtifacts;
+import com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType;
 import com.android.build.gradle.internal.scope.AndroidTask;
 import com.android.build.gradle.internal.scope.GlobalScope;
 import com.android.build.gradle.internal.scope.VariantScope;
 import com.android.build.gradle.internal.variant.BaseVariantData;
+import com.android.build.gradle.options.BooleanOption;
 import com.android.build.gradle.options.ProjectOptions;
 import com.android.build.gradle.tasks.ManifestProcessorTask;
 import com.android.build.gradle.tasks.MergeResources;
@@ -59,6 +66,11 @@ import com.google.common.collect.ImmutableList;
 import com.house365.build.gradle.tasks.MergeManifests;
 import com.house365.build.transform.ShadeJniLibsTransform;
 
+import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.AIDL;
+import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.ANDROID_RES;
+import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.ASSETS;
+import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.CLASSES;
+import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.MANIFEST;
 import static com.android.build.gradle.internal.scope.TaskOutputHolder.TaskOutputType.INSTANT_RUN_MERGED_MANIFESTS;
 
 /**
@@ -95,65 +107,60 @@ public class ShadeTaskManager extends TaskManager {
         /**
          * 将maven模块以来转换为本地file直接依赖
          */
-        Configuration runtimeClasspath = project.getConfigurations().maybeCreate(variantName + "RuntimeClasspath");
-        Configuration runtimeShadeClasspath = project.getConfigurations().maybeCreate(variantName + "RuntimeShadeClasspath");
+        ConfigurationContainer configurations = project.getConfigurations();
+        Configuration runtimeShadeClasspath = configurations.maybeCreate(variantName + "RuntimeShadeClasspath");
+        applyVariantAttributes(variantScope, runtimeShadeClasspath);
+
+        Configuration shadeClasspath = configurations.maybeCreate(variantName + "ShadeClasspath");
+        applyVariantAttributes(variantScope, shadeClasspath);
+
+        Configuration runtimeClasspath = configurations.maybeCreate(variantName + "RuntimeClasspath");
         runtimeShadeClasspath.getDependencies().addAll(runtimeClasspath.getAllDependencies());
 
-        HashSet<Configuration> configurations = ShadePlugin.instance.extension.getConfigurationAndExtends(variantName + "Shade");
-        if (configurations != null) {
-            for (Configuration configuration : configurations) {
+        HashSet<Configuration> hashSet = ShadePlugin.instance.extension.getConfigurationAndExtends(variantName + "Shade");
+
+        if (hashSet != null) {
+            for (Configuration configuration : hashSet) {
+                shadeClasspath.extendsFrom(configuration);
                 runtimeShadeClasspath.extendsFrom(configuration);
             }
         }
 
-        HashSet<Dependency> requestedSet = new HashSet<>();
-        for (Configuration configuration : configurations) {
-            for (Iterator<Dependency> iterator = configuration.getAllDependencies().iterator(); iterator.hasNext(); ) {
-                Dependency dependency = iterator.next();
-                requestedSet.add(dependency);
-            }
-        }
+        Set<ResolvedArtifactResult> artifacts = getArtifactCollection(shadeClasspath, variantScope, CLASSES).getArtifacts();
 
-        Set<File> files = runtimeShadeClasspath.files(new Spec<Dependency>() {
-            @Override
-            public boolean isSatisfiedBy(Dependency element) {
-                if (requestedSet.contains(element)) {
-                    return true;
-                }
-                return false;
-            }
-        });
+        Set<ResolvedArtifactResult> artifacts1 = getArtifactCollection(shadeClasspath, variantScope, MANIFEST).getArtifacts();
+        Set<ComponentIdentifier> collect = artifacts1.stream().map(t -> t.getId().getComponentIdentifier()).collect(Collectors.toSet());
+
+        Set<ResolvedArtifactResult> jarArtifacts = artifacts.stream().filter(t ->
+                !collect.contains(t.getId().getComponentIdentifier())
+        ).collect(Collectors.toSet());
+
+        Set<ResolvedArtifactResult> classArtifacts = getResolvedArtifactResults(variantScope, runtimeShadeClasspath, jarArtifacts, CLASSES).getArtifacts();
+
         Set<File> jarFiles = new HashSet<>();
-        Set<File> aarFiles = new HashSet<>();
-        for (File file : files) {
-            if (FilenameUtils.getExtension(file.getName()).equalsIgnoreCase("jar")) {
-                jarFiles.add(file);
-            } else {
-                aarFiles.add(file);
-            }
+
+        for (ResolvedArtifactResult runtimeShadeArtifact : classArtifacts) {
+            jarFiles.add(runtimeShadeArtifact.getFile());
         }
 
-        Configuration shadeJarClasspath = project.getConfigurations().maybeCreate(variantName + "ShadeJarClasspath");
+        Configuration shadeJarClasspath = configurations.maybeCreate(variantName + "ShadeJarClasspath");
         project.getDependencies().add(shadeJarClasspath.getName(), project.files(jarFiles));
         runtimeClasspath.extendsFrom(shadeJarClasspath);
         if (variantScope.getVariantConfiguration().getBuildType().getName().equals("debug")) {
-            project.getConfigurations().getByName(variantName + "AndroidTestRuntimeClasspath").extendsFrom(shadeJarClasspath);
+            configurations.getByName(variantName + "AndroidTestRuntimeClasspath").extendsFrom(shadeJarClasspath);
         }
-        Configuration compileClasspath = project.getConfigurations().getByName(variantName + "CompileClasspath");
-        compileClasspath.extendsFrom(configurations.toArray(new Configuration[configurations.size()]));
-        Configuration shadeAarClasspath = project.getConfigurations().maybeCreate(variantName + "ShadeAarClasspath");
-        if (aarFiles.size() > 0) {
-            project.getDependencies().add(shadeAarClasspath.getName(), project.files(aarFiles));
-        }
-        for (Configuration configuration : configurations) {
+        Configuration compileClasspath = configurations.getByName(variantName + "CompileClasspath");
+        compileClasspath.extendsFrom(hashSet.toArray(new Configuration[hashSet.size()]));
+
+        for (Configuration configuration : hashSet) {
             runtimeClasspath.extendsFrom(configuration);
         }
-        ArtifactCollection aidlArtifacts = getArtifactCollection(variantName, AndroidArtifacts.ArtifactType.AIDL);
+        ArtifactCollection aidlArtifacts = getShadeArtifactCollection(variantScope, AIDL);
         if (aidlArtifacts.getArtifacts().size() > 0) {
             throw new GradleException("The current version of the shade plug-in does not support AIDL merge processing.");
         }
 
-        project.getConfigurations().getByName(variantName + "UnitTestRuntimeClasspath").extendsFrom(shadeJarClasspath);
+        configurations.getByName(variantName + "UnitTestRuntimeClasspath").extendsFrom(shadeJarClasspath);
 
         AndroidTask<? extends JavaCompile> javacTask = variantScope.getJavacTask();
 
@@ -171,6 +178,16 @@ public class ShadeTaskManager extends TaskManager {
                 throw new GradleException(e.getMessage());
             }
         }
+    }
+
+    @NotNull
+    private void applyVariantAttributes(VariantScope variantScope, Configuration configuration) {
+        ObjectFactory factory = project.getObjects();
+        final Usage runtimeUsage = factory.named(Usage.class, Usage.JAVA_RUNTIME);
+        final AttributeContainer attributeContainer = configuration.getAttributes();
+        attributeContainer.attribute(BuildTypeAttr.ATTRIBUTE, project.getObjects().named(BuildTypeAttr.class, variantScope.getVariantConfiguration().getBuildType().getName()));
+        attributeContainer.attribute(Usage.USAGE_ATTRIBUTE, runtimeUsage);
+        attributeContainer.attribute(AndroidTypeAttr.ATTRIBUTE, project.getObjects().named(AndroidTypeAttr.class, AndroidTypeAttr.AAR));
     }
 
 
@@ -242,7 +259,7 @@ public class ShadeTaskManager extends TaskManager {
             TaskFactory tasks,
             VariantScope variantScope) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
         logger.log(Level.INFO, "appendShadeResourcesTask() called with: tasks = [" + tasks + "], variantScope = [" + variantScope + "]");
-        ArtifactCollection artifacts = getArtifactCollection(variantScope.getFullVariantName(), AndroidArtifacts.ArtifactType.ANDROID_RES);
+        ArtifactCollection artifacts = getShadeArtifactCollection(variantScope, ANDROID_RES);
         MergeResources packageDebugResources = (MergeResources) tasks.named(variantScope.getTaskName("package", "Resources"));
         MethodInvokeUtils.invokeMethod(packageDebugResources, "setLibraries", artifacts);
     }
@@ -258,7 +275,7 @@ public class ShadeTaskManager extends TaskManager {
             VariantScope variantScope) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
         logger.log(Level.INFO, "appendShadeAssetsTask() called with: tasks = [" + tasks + "], variantScope = [" + variantScope + "]");
         MergeSourceSetFolders mergeAssetsTask = variantScope.getVariantData().mergeAssetsTask;
-        ArtifactCollection artifacts = getArtifactCollection(variantScope.getFullVariantName(), AndroidArtifacts.ArtifactType.ASSETS);
+        ArtifactCollection artifacts = getShadeArtifactCollection(variantScope, ASSETS);
         MethodInvokeUtils.invokeMethod(mergeAssetsTask, "setLibraries", artifacts);
     }
 
@@ -366,7 +383,7 @@ public class ShadeTaskManager extends TaskManager {
         // 该处理逻辑功能可以实现,但是与Jar中的so处理时机LibraryJniLibsTransform(syncJniLibs)不一致,废弃.
         logger.log(Level.INFO, "appendShadeAssetsTask() called with: tasks = [" + tasks + "], variantScope = [" + variantScope + "]");
         MergeSourceSetFolders mergeAssetsTask = (MergeSourceSetFolders) tasks.named(variantScope.getTaskName("merge", "JniLibFolders"));
-        ArtifactCollection artifacts = getArtifactCollection(variantScope.getFullVariantName(), AndroidArtifacts.ArtifactType.JNI);
+        ArtifactCollection artifacts = getShadeArtifactCollection(variantScope.getFullVariantName(), AndroidArtifacts.ArtifactType.JNI);
         MethodInvokeUtils.invokeMethod(mergeAssetsTask, "setLibraries", artifacts);
 */
 
@@ -381,31 +398,107 @@ public class ShadeTaskManager extends TaskManager {
         taskOptional.ifPresent(t -> bundle.dependsOn(t.getName()));
     }
 
-    public ArtifactCollection getArtifactCollection(
-            String variantName,
-            AndroidArtifacts.ArtifactType artifactType) {
-        return getArtifactCollection(project, variantName, artifactType);
+    public ArtifactCollection getShadeArtifactCollection(
+            VariantScope variantScope,
+            ArtifactType artifactType) {
+        return getShadeArtifactCollection(project, variantScope, artifactType);
+    }
+
+
+    /**
+     * 参照resolvedArtifactResults,获取configuration中实际使用的依赖集合.
+     *
+     * @param variantScope
+     * @param configuration
+     * @param resolvedArtifactResults
+     * @param artifactType
+     * @return
+     */
+    @NotNull
+    private static ArtifactCollection getResolvedArtifactResults(
+            VariantScope variantScope,
+            Configuration configuration,
+            Set<ResolvedArtifactResult> resolvedArtifactResults,
+            ArtifactType artifactType) {
+        Set<ComponentIdentifier> componentIdentifiers = new HashSet<>(resolvedArtifactResults.size(), 1);
+        Set<String> moduleWithoutVersion = new HashSet<>(resolvedArtifactResults.size(), 1);
+        for (ResolvedArtifactResult artifact : resolvedArtifactResults) {
+            ComponentIdentifier identifier = artifact.getId().getComponentIdentifier();
+            if (identifier instanceof ModuleComponentIdentifier) {
+                String group = ((ModuleComponentIdentifier) identifier).getGroup();
+                String module = ((ModuleComponentIdentifier) identifier).getModule();
+                moduleWithoutVersion.add(group + ":" + module);
+            } else {
+                componentIdentifiers.add(identifier);
+            }
+        }
+        return getArtifactCollection(configuration, variantScope, artifactType, new CompositeSpec<ComponentIdentifier>() {
+            @Override
+            public boolean isSatisfiedBy(ComponentIdentifier element) {
+                if (element instanceof ModuleComponentIdentifier) {
+                    String group = ((ModuleComponentIdentifier) element).getGroup();
+                    String module = ((ModuleComponentIdentifier) element).getModule();
+                    return moduleWithoutVersion.contains(group + ":" + module);
+                } else if (componentIdentifiers.contains(element)) {
+                    return true;
+                }
+                return false;
+            }
+        });
     }
 
     /**
-     * 功能类似于VariantScopeImpl#getArtifactCollection,用户获取Shade的AAR中的制定资源.
+     * 功能类似于VariantScopeImpl#getShadeArtifactCollection,用户获取Shade的AAR中的制定资源.
      *
-     * @param variantName
+     * @param variantScope
      * @param artifactType
-     * @return
-     * @see com.android.build.gradle.internal.scope.VariantScopeImpl#getArtifactCollection(AndroidArtifacts.ConsumedConfigType, AndroidArtifacts.ArtifactScope, AndroidArtifacts.ArtifactType) ;
+     * @see com.android.build.gradle.internal.scope.VariantScopeImpl#getArtifactCollection(AndroidArtifacts.ConsumedConfigType, AndroidArtifacts.ArtifactScope, ArtifactType) ;
      */
     @NotNull
-    public static ArtifactCollection getArtifactCollection(
+    public static ArtifactCollection getShadeArtifactCollection(
             Project project,
-            String variantName,
-            AndroidArtifacts.ArtifactType artifactType) {
-        Configuration shadeAarClasspath = project.getConfigurations().maybeCreate(variantName + "ShadeAarClasspath");
+            VariantScope variantScope,
+            ArtifactType artifactType) {
+        ConfigurationContainer configurations = project.getConfigurations();
+        String variantName = variantScope.getFullVariantName();
+        Configuration shadeClasspath = configurations.maybeCreate(variantName + "ShadeClasspath");
+        Set<ResolvedArtifactResult> artifacts = getArtifactCollection(shadeClasspath, variantScope, MANIFEST).getArtifacts();
+        Configuration runtimeShadeClasspath = configurations.maybeCreate(variantName + "RuntimeShadeClasspath");
+        return getResolvedArtifactResults(variantScope, runtimeShadeClasspath, artifacts, artifactType);
+    }
+
+    public static ArtifactCollection getArtifactCollection(
+            Configuration configuration,
+            VariantScope variantScope,
+            ArtifactType artifactType) {
+        return getArtifactCollection(configuration, variantScope.getGlobalScope(), artifactType, null);
+    }
+
+    public static ArtifactCollection getArtifactCollection(
+            Configuration configuration,
+            VariantScope variantScope,
+            ArtifactType artifactType, CompositeSpec<ComponentIdentifier> filter) {
+        return getArtifactCollection(configuration, variantScope.getGlobalScope(), artifactType, filter);
+    }
+
+    public static ArtifactCollection getArtifactCollection(
+            Configuration configuration,
+            GlobalScope globalScope,
+            ArtifactType artifactType,
+            CompositeSpec<ComponentIdentifier> filter) {
         Action<AttributeContainer> attributes =
                 container -> container.attribute(AndroidArtifacts.ARTIFACT_TYPE, artifactType.getType());
-        return shadeAarClasspath.getIncoming().artifactView(
+
+        boolean lenientMode =
+                Boolean.TRUE.equals(
+                        globalScope.getProjectOptions().get(BooleanOption.IDE_BUILD_MODEL_ONLY));
+
+        return configuration.getIncoming().artifactView(
                 config -> {
                     config.attributes(attributes);
+                    if (filter != null)
+                        config.componentFilter(filter);
+                    config.lenient(lenientMode);
                 }).getArtifacts();
     }
 }

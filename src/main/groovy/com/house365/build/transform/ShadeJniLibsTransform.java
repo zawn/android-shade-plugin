@@ -19,6 +19,7 @@ import com.android.SdkConstants;
 import com.android.annotations.NonNull;
 import com.android.build.api.transform.QualifiedContent;
 import com.android.build.api.transform.TransformInvocation;
+import com.android.build.gradle.internal.pipeline.TransformManager;
 import com.android.build.gradle.internal.publishing.AndroidArtifacts;
 import com.android.build.gradle.internal.scope.VariantScope;
 import com.android.build.gradle.internal.transforms.LibraryJniLibsTransform;
@@ -66,6 +67,12 @@ public class ShadeJniLibsTransform extends LibraryJniLibsTransform {
 
     @NonNull
     @Override
+    public Set<? super QualifiedContent.Scope> getReferencedScopes() {
+        return TransformManager.SCOPE_FULL_PROJECT;
+    }
+
+    @NonNull
+    @Override
     public String getName() {
         return "shadeJniLibs";
     }
@@ -73,7 +80,7 @@ public class ShadeJniLibsTransform extends LibraryJniLibsTransform {
     @TaskAction
     public void transform(@NonNull TransformInvocation invocation)
             throws IOException {
-        ArtifactCollection artifacts = shadeTaskManager.getArtifactCollection(variantScope.getFullVariantName(), AndroidArtifacts.ArtifactType.JNI);
+        ArtifactCollection artifacts = shadeTaskManager.getShadeArtifactCollection(variantScope, AndroidArtifacts.ArtifactType.JNI);
         Set<String> filters = variantScope.getVariantConfiguration().getSupportedAbis();
         ArrayList<File> jniDirNames = new ArrayList<>();
         for (File file : artifacts.getArtifactFiles()) {

@@ -1,5 +1,14 @@
 package com.house365.build.util;
 
+import java.io.File;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.regex.Pattern;
+
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
+
 import com.android.annotations.NonNull;
 import com.android.build.gradle.internal.packaging.PackagingFileAction;
 import com.android.build.gradle.internal.packaging.ParsedPackagingOptions;
@@ -7,14 +16,6 @@ import com.android.builder.packaging.DuplicateFileException;
 import com.android.builder.packaging.ZipAbortException;
 import com.android.builder.packaging.ZipEntryFilter;
 import com.google.common.collect.Lists;
-import org.gradle.api.logging.Logger;
-import org.gradle.api.logging.Logging;
-
-import java.io.File;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.regex.Pattern;
 
 import static com.android.SdkConstants.DOT_CLASS;
 
@@ -28,7 +29,8 @@ public class ZipEntryFilterUtil {
 
     public static final class JarWhitoutRFilter extends PackagingFilter {
 
-        public JarWhitoutRFilter(ParsedPackagingOptions packagingOptions, ZipEntryFilter parentFilter) {
+        public JarWhitoutRFilter(ParsedPackagingOptions packagingOptions,
+                                 ZipEntryFilter parentFilter) {
             super(packagingOptions, parentFilter);
         }
 
@@ -71,7 +73,8 @@ public class ZipEntryFilterUtil {
 
         private ParsedPackagingOptions packagingOptions;
 
-        public PackagingFilter(ParsedPackagingOptions packagingOptions, ZipEntryFilter parentFilter) {
+        public PackagingFilter(ParsedPackagingOptions packagingOptions,
+                               ZipEntryFilter parentFilter) {
             this.packagingOptions = packagingOptions;
             this.parentFilter = parentFilter;
         }
@@ -178,18 +181,22 @@ public class ZipEntryFilterUtil {
     /**
      * A filter to filter out binary files like .class
      */
-    private static final class NoJavaClassZipFilter implements ZipEntryFilter {
+    public static final class NoJavaClassZipFilter implements ZipEntryFilter {
         @NonNull
         private final ZipEntryFilter parentFilter;
 
-        private NoJavaClassZipFilter(@NonNull ZipEntryFilter parentFilter) {
+        public NoJavaClassZipFilter(@NonNull ZipEntryFilter parentFilter) {
             this.parentFilter = parentFilter;
         }
 
 
         @Override
         public boolean checkEntry(String archivePath) throws ZipAbortException {
-            return parentFilter.checkEntry(archivePath) && !archivePath.endsWith(DOT_CLASS);
+            if (parentFilter != null) {
+                return parentFilter.checkEntry(archivePath) && !archivePath.endsWith(DOT_CLASS);
+            } else {
+                return !archivePath.endsWith(DOT_CLASS);
+            }
         }
     }
 
@@ -207,6 +214,4 @@ public class ZipEntryFilterUtil {
         }
         return patterns;
     }
-
-
 }

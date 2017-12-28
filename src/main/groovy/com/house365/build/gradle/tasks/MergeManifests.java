@@ -93,7 +93,9 @@ import static com.android.build.gradle.options.BooleanOption.BUILD_ONLY_TARGET_A
  * @see <a href="https://android.googlesource.com/platform/tools/base/+/gradle_3.0.0/build-system/gradle-core/src/main/java/com/android/build/gradle/tasks/MergeManifests.java">MergeManifests.java</a>
  */
 
-/** A task that processes the manifest */
+/**
+ * A task that processes the manifest
+ */
 @CacheableTask
 public class MergeManifests extends ManifestProcessorTask {
 
@@ -105,7 +107,7 @@ public class MergeManifests extends ManifestProcessorTask {
     private ArtifactCollection manifests;
     private ArtifactCollection featureManifests;
     private FileCollection microApkManifest;
-//    private FileCollection compatibleScreensManifest;
+    //    private FileCollection compatibleScreensManifest;
     private FileCollection packageManifest;
     private List<Feature> optionalFeatures;
     private OutputScope outputScope;
@@ -182,12 +184,12 @@ public class MergeManifests extends ManifestProcessorTask {
             ImmutableMap<String, String> properties =
                     mergedXmlDocument != null
                             ? ImmutableMap.of(
-                                    "packageId",
-                                    mergedXmlDocument.getPackageName(),
-                                    "split",
-                                    mergedXmlDocument.getSplitName(),
-                                    SdkConstants.ATTR_MIN_SDK_VERSION,
-                                    mergedXmlDocument.getMinSdkVersion())
+                            "packageId",
+                            mergedXmlDocument.getPackageName(),
+                            "split",
+                            mergedXmlDocument.getSplitName(),
+                            SdkConstants.ATTR_MIN_SDK_VERSION,
+                            mergedXmlDocument.getMinSdkVersion())
                             : ImmutableMap.of();
 
             outputScope.addOutputForSplit(
@@ -256,7 +258,7 @@ public class MergeManifests extends ManifestProcessorTask {
 
     /**
      * Returns a serialized version of our map of key value pairs for placeholder substitution.
-     *
+     * <p>
      * This serialized form is only used by gradle to compare past and present tasks to determine
      * whether a task need to be re-run or not.
      */
@@ -300,7 +302,6 @@ public class MergeManifests extends ManifestProcessorTask {
                     new ConfigAction.ManifestProviderImpl(
                             compatibleScreenManifestForSplit.getOutputFile(),
                             "Compatible-Screens sub-manifest"));
-
         }
 
         if (featureManifests != null) {
@@ -331,11 +332,9 @@ public class MergeManifests extends ManifestProcessorTask {
         ComponentIdentifier id = artifact.getId().getComponentIdentifier();
         if (id instanceof ProjectComponentIdentifier) {
             return ((ProjectComponentIdentifier) id).getProjectPath();
-
         } else if (id instanceof ModuleComponentIdentifier) {
             ModuleComponentIdentifier mID = (ModuleComponentIdentifier) id;
             return mID.getGroup() + ":" + mID.getModule() + ":" + mID.getVersion();
-
         } else if (id instanceof OpaqueComponentArtifactIdentifier) {
             // this is the case for local jars.
             // FIXME: use a non internal class.
@@ -365,13 +364,17 @@ public class MergeManifests extends ManifestProcessorTask {
         return maxSdkVersion.get();
     }
 
-    /** Not an input, see {@link #getOptionalFeaturesString()}. */
+    /**
+     * Not an input, see {@link #getOptionalFeaturesString()}.
+     */
     @Internal
     public List<Feature> getOptionalFeatures() {
         return optionalFeatures;
     }
 
-    /** Synthetic input for {@link #getOptionalFeatures()} */
+    /**
+     * Synthetic input for {@link #getOptionalFeatures()}
+     */
     @Input
     public List<String> getOptionalFeaturesString() {
         return optionalFeatures.stream().map(Enum::toString).collect(Collectors.toList());
@@ -452,7 +455,8 @@ public class MergeManifests extends ManifestProcessorTask {
 
         protected final VariantScope variantScope;
         protected final List<Feature> optionalFeatures;
-        @Nullable private final File reportFile;
+        @Nullable
+        private final File reportFile;
 
         public ConfigAction(
                 @NonNull VariantScope scope,
@@ -493,9 +497,9 @@ public class MergeManifests extends ManifestProcessorTask {
 
 //            // This includes the dependent libraries.
 //            processManifestTask.manifests =
-//                    variantScope.getArtifactCollection(RUNTIME_CLASSPATH, ALL, MANIFEST);
+//                    variantScope.getShadeArtifactCollection(RUNTIME_CLASSPATH, ALL, MANIFEST);
             processManifestTask.manifests =
-                    ShadeTaskManager.getArtifactCollection(project, variantScope.getFullVariantName(), MANIFEST);
+                    ShadeTaskManager.getShadeArtifactCollection(project, variantScope, MANIFEST);
 
             // optional manifest files too.
             if (variantScope.getMicroApkTask() != null &&
@@ -537,12 +541,12 @@ public class MergeManifests extends ManifestProcessorTask {
                     variantData.getVariantConfiguration().getSupportedAbis();
             processManifestTask.buildTargetAbi =
                     projectOptions.get(BUILD_ONLY_TARGET_ABI)
-                                    || variantScope
-                                            .getGlobalScope()
-                                            .getExtension()
-                                            .getSplits()
-                                            .getAbi()
-                                            .isEnable()
+                            || variantScope
+                            .getGlobalScope()
+                            .getExtension()
+                            .getSplits()
+                            .getAbi()
+                            .isEnable()
                             ? projectOptions.get(StringOption.IDE_BUILD_TARGET_ABI)
                             : null;
             processManifestTask.buildTargetDensity =
@@ -555,7 +559,7 @@ public class MergeManifests extends ManifestProcessorTask {
 
         /**
          * Implementation of AndroidBundle that only contains a manifest.
-         *
+         * <p>
          * This is used to pass to the merger manifest snippet that needs to be added during
          * merge.
          */

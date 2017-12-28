@@ -32,6 +32,7 @@ import com.android.build.api.transform.TransformInput;
 import com.android.build.api.transform.TransformInvocation;
 import com.android.build.api.transform.TransformOutputProvider;
 import com.android.build.gradle.LibraryExtension;
+import com.android.build.gradle.internal.InternalScope;
 import com.android.build.gradle.internal.dsl.PackagingOptions;
 import com.android.build.gradle.internal.packaging.ParsedPackagingOptions;
 import com.android.build.gradle.internal.pipeline.TransformManager;
@@ -40,6 +41,7 @@ import com.android.build.gradle.internal.scope.VariantScope;
 import com.android.build.gradle.internal.variant.BaseVariantData;
 import com.android.builder.core.DefaultManifestParser;
 import com.android.builder.packaging.JarMerger;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.house365.build.ShadeTaskManager;
 import com.house365.build.util.ZipEntryFilterUtil;
@@ -106,6 +108,11 @@ public class ShadeAarClassTransform extends Transform {
         return TransformManager.SCOPE_FULL_PROJECT;
     }
 
+    @Override
+    public Set<? super Scope> getReferencedScopes() {
+        return ImmutableSet.of(InternalScope.LOCAL_DEPS);
+    }
+
     public void transform(@NonNull TransformInvocation invocation)
             throws TransformException, InterruptedException, IOException {
         variantScope = shadeTaskManager.getCurrentVariant(invocation);
@@ -117,8 +124,8 @@ public class ShadeAarClassTransform extends Transform {
         Configuration shadeAarClasspath = project.getConfigurations().maybeCreate(variantName + "ShadeAarClasspath");
         // 该段代码会导致重复解压缩aar,C:\Users\zhang\.gradle\caches\transforms-1\files-1.1\zxing-android-embedded-0.0.4.aar
 
-        ArtifactCollection classesArtifacts = shadeTaskManager.getArtifactCollection(variantName, AndroidArtifacts.ArtifactType.CLASSES);
-        ArtifactCollection manifestArtifacts = shadeTaskManager.getArtifactCollection(variantName, AndroidArtifacts.ArtifactType.MANIFEST);
+        ArtifactCollection classesArtifacts = shadeTaskManager.getShadeArtifactCollection(variantScope, AndroidArtifacts.ArtifactType.CLASSES);
+        ArtifactCollection manifestArtifacts = shadeTaskManager.getShadeArtifactCollection(variantScope, AndroidArtifacts.ArtifactType.MANIFEST);
 
         FileCollection aarJars = classesArtifacts.getArtifactFiles();
 
@@ -145,6 +152,15 @@ public class ShadeAarClassTransform extends Transform {
         if (jarFile.exists()) {
             Files.delete(jarFile.toPath());
         }
+
+        /**
+         * {@link com.android.build.gradle.internal.transforms.LibraryAarJarsTransform#transform(TransformInvocation)}实现中丢弃了Local Jar中的Res.
+         * 该处理方法在部分情况先会导致程序出错,比如在Local Jar中直接添加okhttp的依赖.故添加对Local Jar中的Res的处理.
+         */
+        File resJarFile = outputProvider.getContentLocation("res", getOutputTypes(), getScopes(),
+                Format.JAR);
+        jarMerger(resJarFile, invocation.getReferencedInputs(), null,
+                new ZipEntryFilterUtil.JarWhitoutRFilter(parsedPackagingOptions, new ZipEntryFilterUtil.NoJavaClassZipFilter(null)));
     }
 
 
@@ -186,7 +202,6 @@ public class ShadeAarClassTransform extends Transform {
      * @param manifests
      * @param inputJar
      * @param outputJar
-     * @return
      */
     public void jarjar(BaseVariantData variantData,
                        ArtifactCollection manifests,
