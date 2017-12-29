@@ -70,7 +70,7 @@ public class ShadePlugin implements Plugin<Project> {
                     "The 'com.baseExtension.library' plugin not being applied, Android shade plugins does not work.");
         }
         String[] strings = Version.ANDROID_GRADLE_PLUGIN_VERSION.split("-");
-        if (strings.length > 0 && strings[0].matches("^3.9.(\\*|\\d+)$")) {
+        if (strings.length > 0 && strings[0].matches("^3.0.(\\*|\\d+)$")) {
             // version match
         } else {
             throw new ProjectConfigurationException("Android Shade Plugin needs and match the version " +
