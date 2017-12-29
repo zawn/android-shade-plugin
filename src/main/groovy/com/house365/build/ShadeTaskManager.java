@@ -17,9 +17,11 @@ import org.apache.commons.lang3.reflect.MethodInvokeUtils;
 import org.gradle.api.Action;
 import org.gradle.api.GradleException;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.ArtifactCollection;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
+import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.artifacts.result.ResolvedArtifactResult;
@@ -28,6 +30,7 @@ import org.gradle.api.attributes.Usage;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.specs.CompositeSpec;
 import org.gradle.api.tasks.compile.JavaCompile;
+import org.gradle.internal.component.local.model.PublishArtifactLocalArtifactMetadata;
 import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry;
 import org.jetbrains.annotations.NotNull;
 
@@ -67,13 +70,14 @@ import com.android.utils.FileUtils;
 import com.google.common.base.CaseFormat;
 import com.google.common.collect.ImmutableList;
 import com.house365.build.gradle.tasks.MergeManifests;
-import com.house365.build.transform.LibraryAarJarsTransform;
 import com.house365.build.gradle.tasks.ShadeJniLibsAction;
+import com.house365.build.transform.LibraryAarJarsTransform;
 
 import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.AIDL;
 import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.ANDROID_RES;
 import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.ASSETS;
 import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.CLASSES;
+import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.JNI;
 import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.MANIFEST;
 import static com.android.build.gradle.internal.scope.TaskOutputHolder.TaskOutputType.INSTANT_RUN_MERGED_MANIFESTS;
 import static com.android.utils.StringHelper.capitalize;
@@ -411,6 +415,17 @@ public class ShadeTaskManager extends TaskManager {
         MethodInvokeUtils.invokeMethod(mergeAssetsTask, "setLibraries", artifacts);
 */
         TransformManager transformManager = variantScope.getTransformManager();
+
+        ArtifactCollection aidlArtifacts = getShadeArtifactCollection(variantScope, JNI);
+        Set<ResolvedArtifactResult> artifacts = aidlArtifacts.getArtifacts();
+        Set<PublishArtifactLocalArtifactMetadata> set = new HashSet<>();
+        for (ResolvedArtifactResult artifact : artifacts) {
+            ComponentArtifactIdentifier id = artifact.getId();
+            if (id instanceof PublishArtifactLocalArtifactMetadata) {
+                set.add((PublishArtifactLocalArtifactMetadata) artifact.getId());
+            }
+        }
+
         try {
             List<Transform> transforms = (List<Transform>) FieldUtils.readField(transformManager, "transforms", true);
             for (Transform transform : transforms) {
@@ -418,7 +433,13 @@ public class ShadeTaskManager extends TaskManager {
                     String taskName = variantScope.getTaskName(getTaskNamePrefix(transform));
                     File jniLibsFolder = (File) FieldUtils.readField(transform, "jniLibsFolder", true);
                     ShadeJniLibsAction action = new ShadeJniLibsAction(this, variantScope, jniLibsFolder);
-                    tasks.named(taskName).doLast(action);
+                    Task task = tasks.named(taskName);
+                    task.doLast(action);
+                    if (!set.isEmpty()) {
+                        for (PublishArtifactLocalArtifactMetadata id : set) {
+                            task.dependsOn(id.getBuildDependencies());
+                        }
+                    }
                 }
             }
         } catch (IllegalAccessException e) {
