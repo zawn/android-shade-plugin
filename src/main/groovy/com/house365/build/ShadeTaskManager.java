@@ -5,7 +5,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -13,11 +12,11 @@ import java.util.stream.Collectors;
 
 import android.databinding.tool.DataBindingBuilder;
 
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.commons.lang3.reflect.MethodInvokeUtils;
 import org.gradle.api.Action;
 import org.gradle.api.GradleException;
 import org.gradle.api.Project;
-import org.gradle.api.Task;
 import org.gradle.api.artifacts.ArtifactCollection;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
@@ -33,9 +32,11 @@ import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry;
 import org.jetbrains.annotations.NotNull;
 
 import com.android.annotations.NonNull;
+import com.android.annotations.VisibleForTesting;
 import com.android.build.api.attributes.BuildTypeAttr;
 import com.android.build.api.transform.Context;
 import com.android.build.api.transform.QualifiedContent;
+import com.android.build.api.transform.Transform;
 import com.android.build.api.transform.TransformInvocation;
 import com.android.build.gradle.AndroidConfig;
 import com.android.build.gradle.BasePlugin;
@@ -43,7 +44,6 @@ import com.android.build.gradle.internal.SdkHandler;
 import com.android.build.gradle.internal.TaskFactory;
 import com.android.build.gradle.internal.TaskManager;
 import com.android.build.gradle.internal.core.GradleVariantConfiguration;
-import com.android.build.gradle.internal.dependency.AndroidTypeAttr;
 import com.android.build.gradle.internal.pipeline.TransformManager;
 import com.android.build.gradle.internal.pipeline.TransformTask;
 import com.android.build.gradle.internal.publishing.AndroidArtifacts;
@@ -51,6 +51,8 @@ import com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactTyp
 import com.android.build.gradle.internal.scope.AndroidTask;
 import com.android.build.gradle.internal.scope.GlobalScope;
 import com.android.build.gradle.internal.scope.VariantScope;
+import com.android.build.gradle.internal.transforms.LibraryBaseTransform;
+import com.android.build.gradle.internal.transforms.LibraryJniLibsTransform;
 import com.android.build.gradle.internal.variant.BaseVariantData;
 import com.android.build.gradle.options.BooleanOption;
 import com.android.build.gradle.options.ProjectOptions;
@@ -62,9 +64,11 @@ import com.android.builder.model.SourceProvider;
 import com.android.builder.profile.Recorder;
 import com.android.manifmerger.ManifestMerger2;
 import com.android.utils.FileUtils;
+import com.google.common.base.CaseFormat;
 import com.google.common.collect.ImmutableList;
 import com.house365.build.gradle.tasks.MergeManifests;
-import com.house365.build.transform.ShadeJniLibsTransform;
+import com.house365.build.transform.LibraryAarJarsTransform;
+import com.house365.build.gradle.tasks.ShadeJniLibsAction;
 
 import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.AIDL;
 import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.ANDROID_RES;
@@ -72,6 +76,7 @@ import static com.android.build.gradle.internal.publishing.AndroidArtifacts.Arti
 import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.CLASSES;
 import static com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType.MANIFEST;
 import static com.android.build.gradle.internal.scope.TaskOutputHolder.TaskOutputType.INSTANT_RUN_MERGED_MANIFESTS;
+import static com.android.utils.StringHelper.capitalize;
 
 /**
  * Shade 任务管理.
@@ -152,9 +157,6 @@ public class ShadeTaskManager extends TaskManager {
         Configuration compileClasspath = configurations.getByName(variantName + "CompileClasspath");
         compileClasspath.extendsFrom(hashSet.toArray(new Configuration[hashSet.size()]));
 
-        for (Configuration configuration : hashSet) {
-            runtimeClasspath.extendsFrom(configuration);
-        }
         ArtifactCollection aidlArtifacts = getShadeArtifactCollection(variantScope, AIDL);
         if (aidlArtifacts.getArtifacts().size() > 0) {
             throw new GradleException("The current version of the shade plug-in does not support AIDL merge processing.");
@@ -174,9 +176,32 @@ public class ShadeTaskManager extends TaskManager {
                 createSyncShadeJniLibsTransform(tasks, variantScope);
 
                 createMergeApkManifestsTask(tasks, variantData.getScope());
+
+                fixAddLocalJarRes(tasks, variantScope);
             } catch (IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
                 throw new GradleException(e.getMessage());
             }
+        }
+    }
+
+    private void fixAddLocalJarRes(TaskFactory tasks, VariantScope variantScope) {
+        /**
+         * {@link com.android.build.gradle.internal.transforms.LibraryAarJarsTransform#transform(TransformInvocation)}实现中丢弃了Local Jar中的Res.
+         * 该处理方法在部分情况先会导致程序出错,比如在Local Jar中直接添加okhttp的依赖.故添加对Local Jar中的Res的处理.
+         */
+        TransformManager transformManager = variantScope.getTransformManager();
+        try {
+            List<Transform> transforms = (List<Transform>) FieldUtils.readField(transformManager, "transforms", true);
+            for (Transform transform : transforms) {
+                if (transform instanceof com.android.build.gradle.internal.transforms.LibraryAarJarsTransform) {
+                    LibraryAarJarsTransform aarJarsTransform = new LibraryAarJarsTransform((LibraryBaseTransform) transform);
+                    String taskName = variantScope.getTaskName(getTaskNamePrefix(transform));
+                    TransformTask named = (TransformTask) tasks.named(taskName);
+                    FieldUtils.writeField(named, "transform", aarJarsTransform, true);
+                }
+            }
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
         }
     }
 
@@ -187,7 +212,6 @@ public class ShadeTaskManager extends TaskManager {
         final AttributeContainer attributeContainer = configuration.getAttributes();
         attributeContainer.attribute(BuildTypeAttr.ATTRIBUTE, project.getObjects().named(BuildTypeAttr.class, variantScope.getVariantConfiguration().getBuildType().getName()));
         attributeContainer.attribute(Usage.USAGE_ATTRIBUTE, runtimeUsage);
-        attributeContainer.attribute(AndroidTypeAttr.ATTRIBUTE, project.getObjects().named(AndroidTypeAttr.class, AndroidTypeAttr.AAR));
     }
 
 
@@ -386,16 +410,20 @@ public class ShadeTaskManager extends TaskManager {
         ArtifactCollection artifacts = getShadeArtifactCollection(variantScope.getFullVariantName(), AndroidArtifacts.ArtifactType.JNI);
         MethodInvokeUtils.invokeMethod(mergeAssetsTask, "setLibraries", artifacts);
 */
-
         TransformManager transformManager = variantScope.getTransformManager();
-        Optional<AndroidTask<TransformTask>> taskOptional
-                = transformManager.addTransform(tasks, variantScope, new ShadeJniLibsTransform(this, variantScope));
-        AndroidTask<TransformTask> shadeJniLibsAndroidTask = taskOptional.get();
-        AndroidTask<TransformTask> syncJniLibsAndroidTask = transformManager.getTaskRegistry().get(shadeJniLibsAndroidTask.getName().replace("ShadeJniLibs", "SyncJniLibs"));
-        shadeJniLibsAndroidTask.dependsOn(tasks, syncJniLibsAndroidTask);
-
-        Task bundle = project.getTasks().findByName(variantScope.getTaskName("bundle"));
-        taskOptional.ifPresent(t -> bundle.dependsOn(t.getName()));
+        try {
+            List<Transform> transforms = (List<Transform>) FieldUtils.readField(transformManager, "transforms", true);
+            for (Transform transform : transforms) {
+                if (transform instanceof LibraryJniLibsTransform) {
+                    String taskName = variantScope.getTaskName(getTaskNamePrefix(transform));
+                    File jniLibsFolder = (File) FieldUtils.readField(transform, "jniLibsFolder", true);
+                    ShadeJniLibsAction action = new ShadeJniLibsAction(this, variantScope, jniLibsFolder);
+                    tasks.named(taskName).doLast(action);
+                }
+            }
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
     }
 
     public ArtifactCollection getShadeArtifactCollection(
@@ -500,5 +528,31 @@ public class ShadeTaskManager extends TaskManager {
                         config.componentFilter(filter);
                     config.lenient(lenientMode);
                 }).getArtifacts();
+    }
+
+    /**
+     * @param transform
+     * @return
+     * @see TransformManager#getTaskNamePrefix(Transform)
+     */
+    @VisibleForTesting
+    @NonNull
+    static String getTaskNamePrefix(@NonNull Transform transform) {
+        StringBuilder sb = new StringBuilder(100);
+        sb.append("transform");
+
+        sb.append(
+                transform.getInputTypes()
+                        .stream()
+                        .map(inputType ->
+                                CaseFormat.UPPER_UNDERSCORE.to(
+                                        CaseFormat.UPPER_CAMEL, inputType.name()))
+                        .sorted() // Keep the order stable.
+                        .collect(Collectors.joining("And")))
+                .append("With")
+                .append(capitalize(transform.getName()))
+                .append("For");
+
+        return sb.toString();
     }
 }

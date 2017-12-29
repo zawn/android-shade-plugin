@@ -152,19 +152,10 @@ public class ShadeAarClassTransform extends Transform {
         if (jarFile.exists()) {
             Files.delete(jarFile.toPath());
         }
-
-        /**
-         * {@link com.android.build.gradle.internal.transforms.LibraryAarJarsTransform#transform(TransformInvocation)}实现中丢弃了Local Jar中的Res.
-         * 该处理方法在部分情况先会导致程序出错,比如在Local Jar中直接添加okhttp的依赖.故添加对Local Jar中的Res的处理.
-         */
-        File resJarFile = outputProvider.getContentLocation("res", getOutputTypes(), getScopes(),
-                Format.JAR);
-        jarMerger(resJarFile, invocation.getReferencedInputs(), null,
-                new ZipEntryFilterUtil.JarWhitoutRFilter(parsedPackagingOptions, new ZipEntryFilterUtil.NoJavaClassZipFilter(null)));
     }
 
 
-    public void jarMerger(File jarFile, Collection<TransformInput> inputs,
+    public static void jarMerger(File jarFile, Collection<TransformInput> inputs,
                           FileCollection needCombineJars,
                           ZipEntryFilterUtil.PackagingFilter filter) throws IOException, TransformException {
         JarMerger jarMerger = new JarMerger(jarFile.toPath(), filter);

@@ -2,7 +2,7 @@
  * Copyright (C) 2015 House365. All rights reserved.
  */
 
-package com.house365.build.transform;
+package com.house365.build.gradle.tasks;
 
 import java.io.File;
 import java.io.IOException;
@@ -11,26 +11,20 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import org.gradle.api.Action;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.ArtifactCollection;
-import org.gradle.api.tasks.TaskAction;
 import org.gradle.tooling.exceptions.UnsupportedBuildArgumentException;
 
 import com.android.SdkConstants;
 import com.android.annotations.NonNull;
-import com.android.build.api.transform.QualifiedContent;
-import com.android.build.api.transform.TransformInvocation;
-import com.android.build.gradle.internal.pipeline.TransformManager;
 import com.android.build.gradle.internal.publishing.AndroidArtifacts;
 import com.android.build.gradle.internal.scope.VariantScope;
-import com.android.build.gradle.internal.transforms.LibraryJniLibsTransform;
 import com.android.utils.FileUtils;
 import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.io.Files;
 import com.house365.build.ShadeTaskManager;
-
-import static com.android.SdkConstants.FD_JNI;
 
 /**
  * A Transforms that takes the project/project local streams for native libs and processes and
@@ -38,18 +32,18 @@ import static com.android.SdkConstants.FD_JNI;
  * <p/>
  * This only packages the class files. It ignores other files.
  */
-public class ShadeJniLibsTransform extends LibraryJniLibsTransform {
+public class ShadeJniLibsAction implements Action<Task> {
 
     private ShadeTaskManager shadeTaskManager;
     private final Pattern pattern;
     private final File jniLibsFolder;
     private VariantScope variantScope;
 
-    public ShadeJniLibsTransform(ShadeTaskManager shadeTaskManager,
-                                 VariantScope variantScope) {
-        super("syncShadeJniLibs", new File(variantScope.getBaseBundleDir(), FD_JNI), ImmutableSet.of(QualifiedContent.Scope.EXTERNAL_LIBRARIES));
+    public ShadeJniLibsAction(ShadeTaskManager shadeTaskManager,
+                              VariantScope variantScope,
+                              File jniLibsFolder) {
         this.variantScope = variantScope;
-        jniLibsFolder = new File(variantScope.getBaseBundleDir(), FD_JNI);
+        this.jniLibsFolder = jniLibsFolder;
         this.shadeTaskManager = shadeTaskManager;
         StringBuilder stringBuilder = new StringBuilder();
         if (this.variantScope.getVariantConfiguration().getSupportedAbis() != null) {
@@ -62,48 +56,6 @@ public class ShadeJniLibsTransform extends LibraryJniLibsTransform {
             this.pattern = Pattern.compile("[" + stringBuilder + "]+/[^/]+\\.so");
         } else {
             throw new UnsupportedBuildArgumentException("please configure abiFilters.");
-        }
-    }
-
-    @NonNull
-    @Override
-    public Set<? super QualifiedContent.Scope> getReferencedScopes() {
-        return TransformManager.SCOPE_FULL_PROJECT;
-    }
-
-    @NonNull
-    @Override
-    public String getName() {
-        return "shadeJniLibs";
-    }
-
-    @TaskAction
-    public void transform(@NonNull TransformInvocation invocation)
-            throws IOException {
-        ArtifactCollection artifacts = shadeTaskManager.getShadeArtifactCollection(variantScope, AndroidArtifacts.ArtifactType.JNI);
-        Set<String> filters = variantScope.getVariantConfiguration().getSupportedAbis();
-        ArrayList<File> jniDirNames = new ArrayList<>();
-        for (File file : artifacts.getArtifactFiles()) {
-            boolean hasAbi = false;
-            boolean missingAbi = false;
-            for (String abi : filters) {
-                if (FileUtils.join(file, abi).exists()) {
-                    hasAbi = true;
-                } else {
-                    missingAbi = true;
-                }
-            }
-            if (hasAbi && missingAbi) {
-                throw new UnsupportedOperationException("Can not find all " + Joiner.on(',').join(filters) + " abis in shade dependency:" + file + ",you may need to reconfigure ndk abiFilters");
-            } else if (hasAbi) {
-                jniDirNames.add(file);
-            }
-        }
-
-        if (!jniDirNames.isEmpty()) {
-            for (File file : jniDirNames) {
-                copyFromFolder(file);
-            }
         }
     }
 
@@ -135,6 +87,39 @@ public class ShadeJniLibsTransform extends LibraryJniLibsTransform {
 
                 pathSegments.remove(pathSegments.size() - 1);
             }
+        }
+    }
+
+    @Override
+    public void execute(Task task) {
+        ArtifactCollection artifacts = shadeTaskManager.getShadeArtifactCollection(variantScope, AndroidArtifacts.ArtifactType.JNI);
+        Set<String> filters = variantScope.getVariantConfiguration().getSupportedAbis();
+        ArrayList<File> jniDirNames = new ArrayList<>();
+        for (File file : artifacts.getArtifactFiles()) {
+            boolean hasAbi = false;
+            boolean missingAbi = false;
+            for (String abi : filters) {
+                if (FileUtils.join(file, abi).exists()) {
+                    hasAbi = true;
+                } else {
+                    missingAbi = true;
+                }
+            }
+            if (hasAbi && missingAbi) {
+                throw new UnsupportedOperationException("Can not find all " + Joiner.on(',').join(filters) + " abis in shade dependency:" + file + ",you may need to reconfigure ndk abiFilters");
+            } else if (hasAbi) {
+                jniDirNames.add(file);
+            }
+        }
+
+        try {
+            if (!jniDirNames.isEmpty()) {
+                for (File file : jniDirNames) {
+                    copyFromFolder(file);
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 }
