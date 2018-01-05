@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
 
+import org.apache.commons.io.FilenameUtils;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.ArtifactCollection;
 import org.gradle.api.artifacts.Configuration;
@@ -41,6 +42,7 @@ import com.android.build.gradle.internal.scope.VariantScope;
 import com.android.build.gradle.internal.variant.BaseVariantData;
 import com.android.builder.core.DefaultManifestParser;
 import com.android.builder.packaging.JarMerger;
+import com.android.builder.packaging.ZipEntryFilter;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.house365.build.ShadeTaskManager;
@@ -152,12 +154,34 @@ public class ShadeAarClassTransform extends Transform {
         if (jarFile.exists()) {
             Files.delete(jarFile.toPath());
         }
+
+        FileCollection jars = ShadeTaskManager.getArtifactCollection(project.getConfigurations().getByName(variantName + "ShadeJarClasspath"), variantScope, AndroidArtifacts.ArtifactType.CLASSES).getArtifactFiles();
+        File distJarFile = outputProvider.getContentLocation(FilenameUtils.getBaseName("shade.jar"), getOutputTypes(), getScopes(), Format.JAR);
+        JarMerger jarMerger = new JarMerger(distJarFile.toPath(), ZipEntryFilter.CLASSES_ONLY);
+        try {
+            for (File jar : jars) {
+                jarMerger.addJar(jar.toPath());
+            }
+        } catch (FileNotFoundException e) {
+            throw new TransformException(e);
+        } catch (IOException e) {
+            throw new TransformException(e);
+        } finally {
+            jarMerger.close();
+        }
+//        for (File jar : jars) {
+//            File distJarFile = outputProvider.getContentLocation(FilenameUtils.getBaseName(jar.getName()), getOutputTypes(), getScopes(), Format.JAR);
+//            if (!distJarFile.getParentFile().exists()) {
+//                distJarFile.getParentFile().mkdirs();
+//            }
+//            FileUtils.copyFile(jar, distJarFile);
+//        }
     }
 
 
     public static void jarMerger(File jarFile, Collection<TransformInput> inputs,
-                          FileCollection needCombineJars,
-                          ZipEntryFilterUtil.PackagingFilter filter) throws IOException, TransformException {
+                                 FileCollection needCombineJars,
+                                 ZipEntryFilterUtil.PackagingFilter filter) throws IOException, TransformException {
         JarMerger jarMerger = new JarMerger(jarFile.toPath(), filter);
         try {
             for (TransformInput input : inputs) {

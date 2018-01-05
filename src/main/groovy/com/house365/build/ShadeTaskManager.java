@@ -154,12 +154,18 @@ public class ShadeTaskManager extends TaskManager {
 
         Configuration shadeJarClasspath = configurations.maybeCreate(variantName + "ShadeJarClasspath");
         project.getDependencies().add(shadeJarClasspath.getName(), project.files(jarFiles));
-        runtimeClasspath.extendsFrom(shadeJarClasspath);
+//        runtimeClasspath.extendsFrom(shadeJarClasspath);
         if (variantScope.getVariantConfiguration().getBuildType().getName().equals("debug")) {
             configurations.getByName(variantName + "AndroidTestRuntimeClasspath").extendsFrom(shadeJarClasspath);
         }
         Configuration compileClasspath = configurations.getByName(variantName + "CompileClasspath");
-        compileClasspath.extendsFrom(hashSet.toArray(new Configuration[hashSet.size()]));
+        Configuration apiElements = configurations.getByName(variantName + "ApiElements");
+//        apiElements.extendsFrom(shadeJarClasspath);
+        for (Configuration configuration : hashSet) {
+            compileClasspath.extendsFrom(configuration);
+//            apiElements.extendsFrom(configuration);
+//            runtimeClasspath.extendsFrom(configuration);
+        }
 
         ArtifactCollection aidlArtifacts = getShadeArtifactCollection(variantScope, AIDL);
         if (aidlArtifacts.getArtifacts().size() > 0) {
