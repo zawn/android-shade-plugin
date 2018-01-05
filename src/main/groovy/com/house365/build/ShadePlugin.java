@@ -1,7 +1,10 @@
 package com.house365.build;
 
+import java.lang.reflect.Field;
+
 import javax.inject.Inject;
 
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.ProjectConfigurationException;
@@ -35,6 +38,7 @@ import com.house365.build.transform.ShadeAarClassTransform;
  */
 public class ShadePlugin implements Plugin<Project> {
 
+    public static final String Android_Gradle_Version = "3.9.";
     public static ShadePlugin instance;
 
     private final Instantiator instantiator;
@@ -70,11 +74,11 @@ public class ShadePlugin implements Plugin<Project> {
                     "The 'com.baseExtension.library' plugin not being applied, Android shade plugins does not work.");
         }
         String[] strings = Version.ANDROID_GRADLE_PLUGIN_VERSION.split("-");
-        if (strings.length > 0 && strings[0].matches("^3.0.(\\*|\\d+)$")) {
+        if (strings.length > 0 && strings[0].matches("^" + Android_Gradle_Version + "(\\*|\\d+)$")) {
             // version match
         } else {
             throw new ProjectConfigurationException("Android Shade Plugin needs and match the version " +
-                    "used in conjunction with Android Plugin for Gradle. Requested 2.2.X,but found version " +
+                    "used in conjunction with Android Plugin for Gradle. Requested " + Android_Gradle_Version + "X,but found version " +
                     Version.ANDROID_GRADLE_PLUGIN_VERSION, null);
         }
     }
