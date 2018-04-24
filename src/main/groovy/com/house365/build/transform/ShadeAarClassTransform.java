@@ -169,13 +169,6 @@ public class ShadeAarClassTransform extends Transform {
         } finally {
             jarMerger.close();
         }
-//        for (File jar : jars) {
-//            File distJarFile = outputProvider.getContentLocation(FilenameUtils.getBaseName(jar.getName()), getOutputTypes(), getScopes(), Format.JAR);
-//            if (!distJarFile.getParentFile().exists()) {
-//                distJarFile.getParentFile().mkdirs();
-//            }
-//            FileUtils.copyFile(jar, distJarFile);
-//        }
     }
 
 
@@ -228,9 +221,12 @@ public class ShadeAarClassTransform extends Transform {
             String manifestPackage = new DefaultManifestParser(manifestFile).getPackage();
             System.out.println("Library PackageName:" + manifestPackage);
 
-            String rule = "rule " + manifestPackage + ".R$*  " + appPackageName + ".R$@1";
-            System.out.println("   " + rule);
-            stringBuilder.append(rule).append("\r\n");
+            String rule1 = "rule " + manifestPackage + ".R      " + appPackageName + ".R";
+            System.out.println("   " + rule1);
+            String rule2 = "rule " + manifestPackage + ".R$*    " + appPackageName + ".R$@1";
+            System.out.println("   " + rule2);
+            stringBuilder.append(rule2).append("\r\n");
+            stringBuilder.append(rule1).append("\r\n");
         }
         com.android.utils.FileUtils.mkdirs(outputJar.getParentFile());
         deleteIfExists(outputJar);
