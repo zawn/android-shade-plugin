@@ -1,7 +1,13 @@
 package com.house365.build;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -29,7 +35,6 @@ import org.gradle.api.attributes.AttributeContainer;
 import org.gradle.api.attributes.Usage;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.specs.CompositeSpec;
-import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.internal.component.local.model.PublishArtifactLocalArtifactMetadata;
 import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry;
 import org.jetbrains.annotations.NotNull;
@@ -44,14 +49,12 @@ import com.android.build.api.transform.TransformInvocation;
 import com.android.build.gradle.AndroidConfig;
 import com.android.build.gradle.BasePlugin;
 import com.android.build.gradle.internal.SdkHandler;
-import com.android.build.gradle.internal.TaskFactory;
 import com.android.build.gradle.internal.TaskManager;
 import com.android.build.gradle.internal.core.GradleVariantConfiguration;
 import com.android.build.gradle.internal.pipeline.TransformManager;
 import com.android.build.gradle.internal.pipeline.TransformTask;
 import com.android.build.gradle.internal.publishing.AndroidArtifacts;
 import com.android.build.gradle.internal.publishing.AndroidArtifacts.ArtifactType;
-import com.android.build.gradle.internal.scope.AndroidTask;
 import com.android.build.gradle.internal.scope.GlobalScope;
 import com.android.build.gradle.internal.scope.VariantScope;
 import com.android.build.gradle.internal.transforms.LibraryBaseTransform;
@@ -105,8 +108,9 @@ public class ShadeTaskManager extends TaskManager {
         this.basePlugin = basePlugin;
     }
 
+
     @Override
-    public void createTasksForVariantScope(TaskFactory tasks, VariantScope variantScope) {
+    public void createTasksForVariantScope(VariantScope variantScope) {
         System.out.println("ShadeTaskManager.createTasksForVariantScope");
         BaseVariantData variantData = variantScope.getVariantData();
 
@@ -154,13 +158,19 @@ public class ShadeTaskManager extends TaskManager {
 
         Configuration shadeJarClasspath = configurations.maybeCreate(variantName + "ShadeJarClasspath");
         project.getDependencies().add(shadeJarClasspath.getName(), project.files(jarFiles));
-//        runtimeClasspath.extendsFrom(shadeJarClasspath);
         if (variantScope.getVariantConfiguration().getBuildType().getName().equals("debug")) {
             configurations.getByName(variantName + "AndroidTestRuntimeClasspath").extendsFrom(shadeJarClasspath);
         }
+
+        // 仅在Android Studio中执行用于保证编辑器语法检查正确.
+        if (Boolean.TRUE.equals(
+                globalScope.getProjectOptions().get(BooleanOption.IDE_BUILD_MODEL_ONLY))) {
+            Configuration apiElements = configurations.getByName(variantName + "ApiElements");
+            for (Configuration configuration : hashSet) {
+                apiElements.extendsFrom(configuration);
+            }
+        }
         Configuration compileClasspath = configurations.getByName(variantName + "CompileClasspath");
-        Configuration apiElements = configurations.getByName(variantName + "ApiElements");
-//        apiElements.extendsFrom(shadeJarClasspath);
         for (Configuration configuration : hashSet) {
             compileClasspath.extendsFrom(configuration);
 //            apiElements.extendsFrom(configuration);
@@ -174,27 +184,25 @@ public class ShadeTaskManager extends TaskManager {
 
         configurations.getByName(variantName + "UnitTestRuntimeClasspath").extendsFrom(shadeJarClasspath);
 
-        AndroidTask<? extends JavaCompile> javacTask = variantScope.getJavacTask();
-
         // 针对实际配置有shader依赖的Variant创建相应的任务.
         if (hasShadeDependencies(variantData)) {
             try {
-                appendShadeResourcesTask(tasks, variantScope);
+                appendShadeResourcesTask(variantScope);
 
-                appendShadeAssetsTask(tasks, variantScope);
+                appendShadeAssetsTask(variantScope);
 
-                createSyncShadeJniLibsTransform(tasks, variantScope);
+                createSyncShadeJniLibsTransform(variantScope);
 
-                createMergeApkManifestsTask(tasks, variantData.getScope());
+                createMergeApkManifestsTask(variantData.getScope());
 
-                fixAddLocalJarRes(tasks, variantScope);
+                fixAddLocalJarRes(variantScope);
             } catch (IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
                 throw new GradleException(e.getMessage());
             }
         }
     }
 
-    private void fixAddLocalJarRes(TaskFactory tasks, VariantScope variantScope) {
+    private void fixAddLocalJarRes(VariantScope variantScope) {
         /**
          * {@link com.android.build.gradle.internal.transforms.LibraryAarJarsTransform#transform(TransformInvocation)}实现中丢弃了Local Jar中的Res.
          * 该处理方法在部分情况先会导致程序出错,比如在Local Jar中直接添加okhttp的依赖.故添加对Local Jar中的Res的处理.
@@ -206,7 +214,7 @@ public class ShadeTaskManager extends TaskManager {
                 if (transform instanceof com.android.build.gradle.internal.transforms.LibraryAarJarsTransform) {
                     LibraryAarJarsTransform aarJarsTransform = new LibraryAarJarsTransform((LibraryBaseTransform) transform);
                     String taskName = variantScope.getTaskName(getTaskNamePrefix(transform));
-                    TransformTask named = (TransformTask) tasks.named(taskName);
+                    TransformTask named = (TransformTask) project.getTasks().getByName(taskName);
                     FieldUtils.writeField(named, "transform", aarJarsTransform, true);
                 }
             }
@@ -269,8 +277,8 @@ public class ShadeTaskManager extends TaskManager {
     }
 
     @Override
-    protected void postJavacCreation(TaskFactory tasks, VariantScope scope) {
-        throw new UnsupportedOperationException("postJavacCreation");
+    protected void postJavacCreation(VariantScope scope) {
+
     }
 
     public VariantScope getCurrentVariant(TransformInvocation invocation) {
@@ -286,42 +294,37 @@ public class ShadeTaskManager extends TaskManager {
     /**
      * 将AAR中的Resource附加现有的任务参数中.
      *
-     * @param tasks
      * @param variantScope
      */
     private void appendShadeResourcesTask(
-            TaskFactory tasks,
             VariantScope variantScope) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-        logger.log(Level.INFO, "appendShadeResourcesTask() called with: tasks = [" + tasks + "], variantScope = [" + variantScope + "]");
+        logger.log(Level.INFO, "appendShadeResourcesTask() called with: variantScope = [" + variantScope + "]");
         ArtifactCollection artifacts = getShadeArtifactCollection(variantScope, ANDROID_RES);
-        MergeResources packageDebugResources = (MergeResources) tasks.named(variantScope.getTaskName("package", "Resources"));
+        MergeResources packageDebugResources = (MergeResources) project.getTasks().getByName(variantScope.getTaskName("package", "Resources"));
         MethodInvokeUtils.invokeMethod(packageDebugResources, "setLibraries", artifacts);
     }
 
     /**
      * 将Shade AAR中的Asset合并进bundle.
      *
-     * @param tasks
      * @param variantScope
      */
     private void appendShadeAssetsTask(
-            TaskFactory tasks,
             VariantScope variantScope) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
-        logger.log(Level.INFO, "appendShadeAssetsTask() called with: tasks = [" + tasks + "], variantScope = [" + variantScope + "]");
+        logger.log(Level.INFO, "appendShadeAssetsTask() called with: variantScope = [" + variantScope + "]");
         MergeSourceSetFolders mergeAssetsTask = variantScope.getVariantData().mergeAssetsTask;
         ArtifactCollection artifacts = getShadeArtifactCollection(variantScope, ASSETS);
         MethodInvokeUtils.invokeMethod(mergeAssetsTask, "setLibraries", artifacts);
     }
 
     /**
-     * 创建合并Android Manifest文件的Task,参考:{@link TaskManager#createMergeApkManifestsTask(TaskFactory, VariantScope)}
+     * 创建合并Android Manifest文件的Task,参考:{@link TaskManager#createMergeApkManifestsTask(VariantScope)}
      *
-     * @param tasks
      * @param variantScope
      */
 
     public void createMergeApkManifestsTask(
-            @NonNull TaskFactory tasks, @NonNull VariantScope variantScope) {
+            @NonNull VariantScope variantScope) {
 
         ImmutableList.Builder<ManifestMerger2.Invoker.Feature> optionalFeatures =
                 ImmutableList.builder();
@@ -339,8 +342,8 @@ public class ShadeTaskManager extends TaskManager {
 //            optionalFeatures.add(ManifestMerger2.Invoker.Feature.ADVANCED_PROFILING);
 //        }
 
-        AndroidTask<? extends ManifestProcessorTask> processManifestTask =
-                createMergeManifestTask(tasks, variantScope, optionalFeatures);
+        ManifestProcessorTask processManifestTask =
+                createMergeManifestTask(variantScope, optionalFeatures);
 
 //        variantScope.addTaskOutput(
 //                MERGED_MANIFESTS,
@@ -353,22 +356,21 @@ public class ShadeTaskManager extends TaskManager {
 //                processManifestTask.getName());
 
         // TODO: use FileCollection
-        tasks.named(variantScope.getManifestProcessorTask().getName()).finalizedBy(processManifestTask.getName());
+        project.getTasks().getByName(variantScope.getManifestProcessorTask().getName()).finalizedBy(processManifestTask.getName());
+        processManifestTask.dependsOn(variantScope.getManifestProcessorTask().getDependsOn());
         variantScope.setManifestProcessorTask(processManifestTask);
 
-        processManifestTask.dependsOn(tasks, variantScope.getCheckManifestTask());
-
-        if (variantScope.getMicroApkTask() != null) {
-            processManifestTask.dependsOn(tasks, variantScope.getMicroApkTask());
-        }
+//
+//        if (variantScope.getMicroApkTask() != null) {
+//            processManifestTask.dependsOn(project.getTasks(), variantScope.getMicroApkTask());
+//        }
     }
 
     /**
      * Creates the merge manifests task.
      */
     @NonNull
-    protected AndroidTask<? extends ManifestProcessorTask> createMergeManifestTask(
-            @NonNull TaskFactory tasks,
+    protected ManifestProcessorTask createMergeManifestTask(
             @NonNull VariantScope variantScope,
             @NonNull ImmutableList.Builder<ManifestMerger2.Invoker.Feature> optionalFeatures) {
         if (variantScope.getVariantConfiguration().isInstantRunBuild(globalScope)) {
@@ -376,9 +378,8 @@ public class ShadeTaskManager extends TaskManager {
         }
 
         final File reportFile = computeManifestReportFile(variantScope);
-        AndroidTask<MergeManifests> mergeManifestsAndroidTask =
-                androidTasks.create(
-                        tasks,
+        MergeManifests mergeManifestsAndroidTask =
+                taskFactory.create(
                         new MergeManifests.ConfigAction(
                                 variantScope, optionalFeatures.build(), reportFile));
 
@@ -407,11 +408,9 @@ public class ShadeTaskManager extends TaskManager {
     /**
      * 将Shade AAR中的Jni合并进bundle.
      *
-     * @param tasks
      * @param variantScope
      */
     private void createSyncShadeJniLibsTransform(
-            TaskFactory tasks,
             VariantScope variantScope) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
 /*
         // 该处理逻辑功能可以实现,但是与Jar中的so处理时机LibraryJniLibsTransform(syncJniLibs)不一致,废弃.
@@ -439,7 +438,7 @@ public class ShadeTaskManager extends TaskManager {
                     String taskName = variantScope.getTaskName(getTaskNamePrefix(transform));
                     File jniLibsFolder = (File) FieldUtils.readField(transform, "jniLibsFolder", true);
                     ShadeJniLibsAction action = new ShadeJniLibsAction(this, variantScope, jniLibsFolder);
-                    Task task = tasks.named(taskName);
+                    Task task = project.getTasks().getByName(taskName);
                     task.doLast(action);
                     if (!set.isEmpty()) {
                         for (PublishArtifactLocalArtifactMetadata id : set) {
@@ -547,6 +546,17 @@ public class ShadeTaskManager extends TaskManager {
         boolean lenientMode =
                 Boolean.TRUE.equals(
                         globalScope.getProjectOptions().get(BooleanOption.IDE_BUILD_MODEL_ONLY));
+        DateFormat timeStampFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        String text = lenientMode + " " + timeStampFormat.format(new Date()) + "\n";
+        try {
+            File logFile = new File("D:\\Github\\aosp\\android-shade-plugin\\log.txt");
+            PrintWriter writer = new PrintWriter(new FileOutputStream(logFile, true));
+            writer.printf(text);
+            writer.flush();
+            writer.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
         return configuration.getIncoming().artifactView(
                 config -> {

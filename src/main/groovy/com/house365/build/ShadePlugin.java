@@ -1,10 +1,7 @@
 package com.house365.build;
 
-import java.lang.reflect.Field;
-
 import javax.inject.Inject;
 
-import org.apache.commons.lang3.reflect.FieldUtils;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.ProjectConfigurationException;
@@ -19,8 +16,6 @@ import com.android.build.gradle.BasePlugin;
 import com.android.build.gradle.LibraryExtension;
 import com.android.build.gradle.LibraryPlugin;
 import com.android.build.gradle.internal.BadPluginException;
-import com.android.build.gradle.internal.TaskContainerAdaptor;
-import com.android.build.gradle.internal.TaskFactory;
 import com.android.build.gradle.internal.scope.VariantScope;
 import com.android.build.gradle.internal.variant.BaseVariantData;
 import com.android.build.gradle.internal.variant.LibraryVariantData;
@@ -38,7 +33,7 @@ import com.house365.build.transform.ShadeAarClassTransform;
  */
 public class ShadePlugin implements Plugin<Project> {
 
-    public static final String Android_Gradle_Version = "3.9.";
+    public static final String Android_Gradle_Version = "3.1.";
     public static ShadePlugin instance;
 
     private final Instantiator instantiator;
@@ -48,7 +43,6 @@ public class ShadePlugin implements Plugin<Project> {
     public BaseExtension baseExtension;
     private BasePlugin basePlugin;
     private ShadeTaskManager taskManager;
-    private TaskFactory tasks;
 
     protected Logger logger;
     private ShadeAarClassTransform shadeAarClassTransform;
@@ -90,8 +84,6 @@ public class ShadePlugin implements Plugin<Project> {
 
         this.baseExtension = project.hasProperty("android") ? (BaseExtension) project.property("android") : null;
         this.basePlugin = project.getPlugins().getPlugin(LibraryPlugin.class);
-
-        this.tasks = new TaskContainerAdaptor(project.getTasks());
 
         ThreadRecorder.get().record(ExecutionType.BASE_PLUGIN_PROJECT_BASE_EXTENSION_CREATION,
                 project.getPath(), null /*variantName*/, new Recorder.Block<Void>() {
@@ -184,7 +176,7 @@ public class ShadePlugin implements Plugin<Project> {
                         new Recorder.Block<Void>() {
                             @Override
                             public Void call() throws Exception {
-                                taskManager.createTasksForVariantScope(tasks, variantScope);
+                                taskManager.createTasksForVariantScope(variantScope);
                                 return null;
                             }
                         });

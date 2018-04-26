@@ -4,6 +4,7 @@ apply plugin: 'groovy'
 
 buildscript {
     repositories {
+        google()
         maven {
             url "F:\\AndroidProjects\\out\\repo"
         }
@@ -26,6 +27,7 @@ buildscript {
 
 repositories {
     //自定义的Android Plugin for Gradle
+    google()
     maven {
         url "F:\\AndroidProjects\\out\\repo"
     }
