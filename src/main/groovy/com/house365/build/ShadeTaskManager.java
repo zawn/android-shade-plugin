@@ -111,7 +111,6 @@ public class ShadeTaskManager extends TaskManager {
 
     @Override
     public void createTasksForVariantScope(VariantScope variantScope) {
-        System.out.println("ShadeTaskManager.createTasksForVariantScope");
         BaseVariantData variantData = variantScope.getVariantData();
 
         // 将shader configurations 加入到javac编译依赖中.
