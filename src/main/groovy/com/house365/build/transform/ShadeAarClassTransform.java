@@ -42,7 +42,6 @@ import com.android.build.gradle.internal.scope.VariantScope;
 import com.android.build.gradle.internal.variant.BaseVariantData;
 import com.android.builder.core.DefaultManifestParser;
 import com.android.builder.packaging.JarMerger;
-import com.android.builder.packaging.ZipEntryFilter;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.house365.build.ShadeTaskManager;
@@ -157,7 +156,7 @@ public class ShadeAarClassTransform extends Transform {
 
         FileCollection jars = ShadeTaskManager.getArtifactCollection(project.getConfigurations().getByName(variantName + "ShadeJarClasspath"), variantScope, AndroidArtifacts.ArtifactType.CLASSES).getArtifactFiles();
         File distJarFile = outputProvider.getContentLocation(FilenameUtils.getBaseName("shade.jar"), getOutputTypes(), getScopes(), Format.JAR);
-        JarMerger jarMerger = new JarMerger(distJarFile.toPath(), ZipEntryFilter.CLASSES_ONLY);
+        JarMerger jarMerger = new JarMerger(distJarFile.toPath(), new ZipEntryFilterUtil.PackagingFilter(parsedPackagingOptions, null));
         try {
             for (File jar : jars) {
                 jarMerger.addJar(jar.toPath());

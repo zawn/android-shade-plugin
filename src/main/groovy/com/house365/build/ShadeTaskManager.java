@@ -195,7 +195,7 @@ public class ShadeTaskManager extends TaskManager {
 
                 createMergeApkManifestsTask(variantData.getScope());
 
-                fixAddLocalJarRes(variantScope);
+//                fixAddLocalJarRes(variantScope);
             } catch (IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
                 throw new GradleException(e.getMessage());
             }
