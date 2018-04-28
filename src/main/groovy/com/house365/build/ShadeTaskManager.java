@@ -1,13 +1,7 @@
 package com.house365.build;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -545,18 +539,7 @@ public class ShadeTaskManager extends TaskManager {
         boolean lenientMode =
                 Boolean.TRUE.equals(
                         globalScope.getProjectOptions().get(BooleanOption.IDE_BUILD_MODEL_ONLY));
-        DateFormat timeStampFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-        String text = lenientMode + " " + timeStampFormat.format(new Date()) + "\n";
-        try {
-            File logFile = new File("D:\\Github\\aosp\\android-shade-plugin\\log.txt");
-            PrintWriter writer = new PrintWriter(new FileOutputStream(logFile, true));
-            writer.printf(text);
-            writer.flush();
-            writer.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
+        
         return configuration.getIncoming().artifactView(
                 config -> {
                     config.attributes(attributes);
