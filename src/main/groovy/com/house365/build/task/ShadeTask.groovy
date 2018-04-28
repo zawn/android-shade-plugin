@@ -38,9 +38,9 @@ class ShadeTask extends DefaultTask {
         shade.files { dep -> dep.name == 'okhttp' }
                 .each { file -> println file.name }
         println("\n 2 ")
-        println("\n _releaseCompile ")
+        println("\n releaseCompileClasspath ")
 
-        def releaseCompile = project.configurations._releaseCompile
+        def releaseCompile = project.configurations.releaseCompileClasspath
         releaseCompile.copyRecursive { dep ->
             println "555555555"
             println dep
@@ -71,7 +71,7 @@ class ShadeTask extends DefaultTask {
 //        shade.getIncoming().getResolutionResult().allDependencies.each {
 //            println shade.files(it.getSelected())
 //        }
-        println "\n\n_releaseCompile ResolutionResult().allDependencies"
+        println "\n\nreleaseCompileClasspath ResolutionResult().allDependencies"
         releaseCompile.allDependencies.each {
             println releaseCompile.allDependencies.find { dep -> dep.name == 'okhttp' }
             println releaseCompile.files(it)

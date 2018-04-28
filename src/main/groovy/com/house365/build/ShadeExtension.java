@@ -1,5 +1,27 @@
 package com.house365.build;
 
+import java.io.File;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Set;
+
+import org.apache.commons.lang3.reflect.FieldUtils;
+import org.gradle.api.Action;
+import org.gradle.api.NamedDomainObjectContainer;
+import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.ConfigurationContainer;
+import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.artifacts.DependencyResolutionListener;
+import org.gradle.api.artifacts.ResolvableDependencies;
+import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
+import org.gradle.api.specs.Spec;
+import org.gradle.api.tasks.SourceSet;
+import org.gradle.internal.reflect.Instantiator;
+
 import com.android.annotations.NonNull;
 import com.android.build.gradle.BaseExtension;
 import com.android.build.gradle.LibraryExtension;
@@ -9,23 +31,6 @@ import com.android.build.gradle.internal.dsl.BuildType;
 import com.android.build.gradle.internal.dsl.ProductFlavor;
 import com.android.build.gradle.internal.dsl.SigningConfig;
 import com.android.builder.core.AndroidBuilder;
-import org.apache.commons.lang3.reflect.FieldUtils;
-import org.gradle.api.Action;
-import org.gradle.api.NamedDomainObjectContainer;
-import org.gradle.api.artifacts.Configuration;
-import org.gradle.api.artifacts.ConfigurationContainer;
-import org.gradle.api.artifacts.DependencyResolutionListener;
-import org.gradle.api.artifacts.ResolvableDependencies;
-import org.gradle.api.internal.project.ProjectInternal;
-import org.gradle.api.logging.Logger;
-import org.gradle.api.logging.Logging;
-import org.gradle.api.tasks.SourceSet;
-import org.gradle.internal.reflect.Instantiator;
-
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.Set;
 
 /**
  * Created by ZhangZhenli on 2016/3/30.
@@ -80,13 +85,11 @@ public class ShadeExtension {
                 createConfiguration(sourceSet);
             }
         });
-
-        project.getGradle().addListener(dependencyResolutionListener);
     }
 
     protected void createConfiguration(AndroidSourceSet sourceSet) {
-        String name = getShadeConfigurationName(sourceSet.getName());
-        if (!name.matches("^test[A-Z].*") && !name.matches("^androidTest[A-Z].*")) {
+        if (!sourceSet.getName().matches("^test[A-Z].*") && !sourceSet.getName().matches("^androidTest[A-Z].*")) {
+            String name = getShadeConfigurationName(sourceSet.getName());
             Configuration configuration = createConfiguration(
                     project.getConfigurations(),
                     name,
@@ -122,34 +125,6 @@ public class ShadeExtension {
     public HashSet<Configuration> getConfigurationAndExtends(@NonNull String configName) {
         return configurationCache.getConfigAndExtends(configName);
     }
-
-    private DependencyResolutionListener dependencyResolutionListener = new DependencyResolutionListener() {
-        @Override
-        public void beforeResolve(ResolvableDependencies resolvableDependencies) {
-            String name = resolvableDependencies.getName();
-            if (resolvableDependencies.getPath().startsWith(project.getPath() + ":")
-                    && name.startsWith("_")
-                    && name.endsWith("Compile")
-                    && !name.contains("UnitTest")
-                    && !name.contains("AndroidTest")) {
-                Configuration compileConfiguration = project.getConfigurations().findByName(name);
-                if (compileConfiguration != null) {
-                    String shadeConfigName = name.replace("Compile", "Shade").substring(1);
-                    HashSet<Configuration> configurations = getConfigurationAndExtends(shadeConfigName);
-                    if (configurations != null) {
-                        for (Configuration configuration : configurations) {
-                            compileConfiguration.extendsFrom(configuration);
-
-                        }
-                    }
-                }
-            }
-        }
-
-        @Override
-        public void afterResolve(ResolvableDependencies resolvableDependencies) {
-        }
-    };
 
     /**
      * 缓存已添加的Configuration以及继承关系.

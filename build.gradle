@@ -2,11 +2,36 @@ import static org.gradle.api.JavaVersion.VERSION_1_8
 
 apply plugin: 'groovy'
 
+buildscript {
+    repositories {
+        maven {
+            url "F:\\AndroidProjects\\out\\repo"
+        }
+        maven {
+            url "F:\\AndroidProjects\\tools\\repo"
+        }
+        maven {
+            url project.getRootDir().getPath() + "/repo"
+        }
+        maven {
+            url "D:/Github/aosp/android-shade-plugin/repo"
+        }
+        mavenLocal()
+        maven {
+            url "http://192.168.108.60/nexus/content/groups/public/"
+        }
+        jcenter()
+    }
+}
+
 repositories {
     //自定义的Android Plugin for Gradle
-//    maven {
-//        url "E:/IdeaProjects/android-gradle-plugin/repo"
-//    }
+    maven {
+        url "F:\\AndroidProjects\\out\\repo"
+    }
+    maven {
+        url "F:\\AndroidProjects\\tools\\repo"
+    }
     mavenLocal()
     maven {
         url "http://192.168.108.60/nexus/content/groups/public/"

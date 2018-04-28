@@ -1,25 +1,7 @@
 package com.house365.build;
 
-import com.android.build.gradle.AppPlugin;
-import com.android.build.gradle.BaseExtension;
-import com.android.build.gradle.BasePlugin;
-import com.android.build.gradle.LibraryPlugin;
-import com.android.build.gradle.internal.BadPluginException;
-import com.android.build.gradle.internal.TaskContainerAdaptor;
-import com.android.build.gradle.internal.TaskFactory;
-import com.android.build.gradle.internal.TaskManager;
-import com.android.build.gradle.internal.VariantManager;
-import com.android.build.gradle.internal.variant.BaseVariantData;
-import com.android.build.gradle.internal.variant.BaseVariantOutputData;
-import com.android.build.gradle.internal.variant.LibraryVariantData;
-import com.android.builder.model.Version;
-import com.android.builder.profile.Recorder;
-import com.android.builder.profile.ThreadRecorder;
-import com.google.wireless.android.sdk.stats.GradleBuildProfileSpan.ExecutionType;
-import com.house365.build.transform.ShadeAarClassTransform;
-import com.house365.build.transform.ShadeJarToLocalTransform;
-import com.house365.build.transform.ShadeJniLibsTransform;
-import org.apache.commons.lang3.reflect.FieldUtils;
+import javax.inject.Inject;
+
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.ProjectConfigurationException;
@@ -28,8 +10,23 @@ import org.gradle.api.logging.Logging;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry;
 
-import javax.inject.Inject;
-import java.util.List;
+import com.android.build.gradle.AppPlugin;
+import com.android.build.gradle.BaseExtension;
+import com.android.build.gradle.BasePlugin;
+import com.android.build.gradle.LibraryExtension;
+import com.android.build.gradle.LibraryPlugin;
+import com.android.build.gradle.internal.BadPluginException;
+import com.android.build.gradle.internal.TaskContainerAdaptor;
+import com.android.build.gradle.internal.TaskFactory;
+import com.android.build.gradle.internal.scope.VariantScope;
+import com.android.build.gradle.internal.variant.BaseVariantData;
+import com.android.build.gradle.internal.variant.LibraryVariantData;
+import com.android.builder.model.Version;
+import com.android.builder.profile.Recorder;
+import com.android.builder.profile.ThreadRecorder;
+import com.google.wireless.android.sdk.stats.GradleBuildProfileSpan.ExecutionType;
+import com.house365.build.task.ShadeTask;
+import com.house365.build.transform.ShadeAarClassTransform;
 
 /**
  * Gradle plugin class for baseExtension library project shade dependencies.
@@ -38,25 +35,26 @@ import java.util.List;
  */
 public class ShadePlugin implements Plugin<Project> {
 
+    public static ShadePlugin instance;
+
     private final Instantiator instantiator;
     private final ToolingModelBuilderRegistry registry;
     protected Project project;
-    private ShadeExtension extension;
-    private BaseExtension baseExtension;
+    public ShadeExtension extension;
+    public BaseExtension baseExtension;
     private BasePlugin basePlugin;
-    private ShadeTaskManager shadeTaskManager;
+    private ShadeTaskManager taskManager;
     private TaskFactory tasks;
 
     protected Logger logger;
-    private ShadeJarToLocalTransform shadeJarToLocalTransform;
-    private ShadeAarClassTransform shadeJarTransform;
-    private ShadeJniLibsTransform shadeJniLibsTransform;
+    private ShadeAarClassTransform shadeAarClassTransform;
 
     @Inject
     public ShadePlugin(Instantiator instantiator, ToolingModelBuilderRegistry registry) {
         this.instantiator = instantiator;
         this.registry = registry;
         this.logger = Logging.getLogger(this.getClass());
+        instance = this;
     }
 
     /**
@@ -72,7 +70,7 @@ public class ShadePlugin implements Plugin<Project> {
                     "The 'com.baseExtension.library' plugin not being applied, Android shade plugins does not work.");
         }
         String[] strings = Version.ANDROID_GRADLE_PLUGIN_VERSION.split("-");
-        if (strings.length > 0 && strings[0].matches("^2.3.(\\*|\\d+)$")) {
+        if (strings.length > 0 && strings[0].matches("^3.9.(\\*|\\d+)$")) {
             // version match
         } else {
             throw new ProjectConfigurationException("Android Shade Plugin needs and match the version " +
@@ -118,17 +116,17 @@ public class ShadePlugin implements Plugin<Project> {
                 project, instantiator, baseExtension);
     }
 
+
     /**
      * 创建相关任务.
      */
     private void createTasks() throws IllegalAccessException {
+        taskManager = TaskHelper.createShadeTaskManager(basePlugin);
 
-        shadeTaskManager = new ShadeTaskManager(project, tasks, instantiator, basePlugin, baseExtension);
+        project.getTasks().create("shadeSimple", ShadeTask.class);
 
-        shadeJarToLocalTransform = new ShadeJarToLocalTransform(project, baseExtension, shadeTaskManager);
-        baseExtension.registerTransform(shadeJarToLocalTransform);
-        shadeJarTransform = new ShadeAarClassTransform(project, baseExtension, shadeTaskManager);
-        baseExtension.registerTransform(shadeJarTransform);
+        shadeAarClassTransform = new ShadeAarClassTransform(project, (LibraryExtension) baseExtension, taskManager);
+        baseExtension.registerTransform(shadeAarClassTransform);
 
         project.afterEvaluate(project -> {
             ThreadRecorder.get().record(ExecutionType.BASE_PLUGIN_CREATE_ANDROID_TASKS,
@@ -149,13 +147,32 @@ public class ShadePlugin implements Plugin<Project> {
      * @throws IllegalAccessException
      */
     public void createShadeActionTasks() throws IllegalAccessException {
-        final VariantManager variantManager = (VariantManager) FieldUtils.readField(basePlugin, "variantManager", true);
-        final TaskManager taskManager = (TaskManager) FieldUtils.readField(variantManager, "taskManager", true);
-        List<BaseVariantData<? extends BaseVariantOutputData>> variantDataList = variantManager.getVariantDataList();
-        for (BaseVariantData<? extends BaseVariantOutputData> baseVariantData : variantDataList) {
-            if (baseVariantData instanceof LibraryVariantData) {
-                final LibraryVariantData variantData = (LibraryVariantData) baseVariantData;
 
+//        baseExtension.
+//        for (VariantScope variantScope : basePlugin.getVariantManager().getVariantScopes()) {
+//            ShadeJarToLocalTransform transform = new ShadeJarToLocalTransform(project, (LibraryExtension) ShadePlugin.instance.baseExtension, taskManager);
+//            Optional<AndroidTask<TransformTask>> androidTask = variantScope.getTransformManager().addTransform(tasks, variantScope, transform);
+//            androidTask.ifPresent(
+//                    t -> {
+////                        if (!deps.isEmpty()) {
+////                            t.dependsOn(tasks, deps);
+////                        }
+//
+//                        // if the task is a no-op then we make assemble task
+//                        // depend on it.
+//                        if (transform.getScopes().isEmpty()) {
+//                            variantScope
+//                                    .getAssembleTask()
+//                                    .dependsOn(tasks, t);
+//                        }
+//                    });
+//
+//
+//        }
+
+        for (VariantScope variantScope : basePlugin.getVariantManager().getVariantScopes()) {
+            BaseVariantData variantData = variantScope.getVariantData();
+            if (variantData instanceof LibraryVariantData) {
                 ThreadRecorder.get().record(
                         ExecutionType.VARIANT_MANAGER_CREATE_TASKS_FOR_VARIANT,
                         project.getPath(),
@@ -163,13 +180,11 @@ public class ShadePlugin implements Plugin<Project> {
                         new Recorder.Block<Void>() {
                             @Override
                             public Void call() throws Exception {
-                                shadeTaskManager.createTasksForVariantData(taskManager, variantData);
+                                taskManager.createTasksForVariantScope(tasks, variantScope);
                                 return null;
                             }
                         });
             }
         }
     }
-
-
 }
